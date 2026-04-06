@@ -24,6 +24,7 @@ export interface Message {
 // --- Broker API types ---
 
 export interface RegisterRequest {
+  id: string;
   pid: number;
   cwd: string;
   git_root: string | null;

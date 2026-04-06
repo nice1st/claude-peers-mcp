@@ -136,13 +136,19 @@ function generateId(): string {
 // --- Request handlers ---
 
 function handleRegister(body: RegisterRequest): RegisterResponse {
-  const id = generateId();
+  const id = body.id;
   const now = new Date().toISOString();
 
-  // Remove any existing registration for this PID (re-registration)
-  const existing = db.query("SELECT id FROM peers WHERE pid = ?").get(body.pid) as { id: string } | null;
-  if (existing) {
-    deletePeer.run(existing.id);
+  // Remove any existing registration for this ID (re-registration with same alias)
+  const existingById = db.query("SELECT id FROM peers WHERE id = ?").get(id) as { id: string } | null;
+  if (existingById) {
+    deletePeer.run(existingById.id);
+  }
+
+  // Remove any existing registration for this PID (different alias, same process)
+  const existingByPid = db.query("SELECT id FROM peers WHERE pid = ?").get(body.pid) as { id: string } | null;
+  if (existingByPid) {
+    deletePeer.run(existingByPid.id);
   }
 
   insertPeer.run(id, body.pid, body.cwd, body.git_root, body.tty, body.summary, now, now);
