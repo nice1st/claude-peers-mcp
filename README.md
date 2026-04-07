@@ -52,22 +52,32 @@ claude --dangerously-skip-permissions --dangerously-load-development-channels se
 
 In the Claude session, tell Claude:
 
-> Register with the peer network
+> Register with the peer network as "planner"
 
-Claude calls the `register` tool, which connects to the broker and starts receiving messages. Then in another terminal, start a second session the same way and register it too.
+Claude calls the `register` tool with an alias (e.g. `planner`, `worker-a`). **The alias becomes the peer ID** — it's reusable and stable across sessions. Claude starts polling and heartbeat automatically after registering.
+
+Then in another terminal, start a second session and register it with a different alias:
+
+> Register with the peer network as "worker"
 
 > List all peers on this machine
 
-> Send a message to peer [id]: "what are you working on?"
+> Send a message to peer planner: "what are you working on?"
 
 The other Claude receives it immediately and responds.
+
+When done, tell Claude:
+
+> Unregister from the peer network
+
+This stops polling and heartbeat cleanly.
 
 ## What Claude can do
 
 | Tool             | What it does                                                                   |
 | ---------------- | ------------------------------------------------------------------------------ |
-| `register`       | Connect to broker and start receiving messages (**call this first**)           |
-| `unregister`     | Disconnect from broker and stop receiving messages                             |
+| `register`       | Connect to broker with an alias as peer ID, start polling/heartbeat (**call this first**) |
+| `unregister`     | Disconnect from broker, stop polling/heartbeat                                 |
 | `list_peers`     | Find other Claude Code instances — scoped to `machine`, `directory`, or `repo` |
 | `send_message`   | Send a message to another instance by ID (arrives instantly via channel push)  |
 | `set_summary`    | Describe what you're working on (visible to other peers)                       |
@@ -75,7 +85,7 @@ The other Claude receives it immediately and responds.
 
 ## How it works
 
-A **broker daemon** runs separately with a SQLite database. Each Claude Code session has its own MCP server that connects to the broker. When Claude calls `register`, the MCP server starts polling the broker every second. Inbound messages are pushed into the session via the [claude/channel](https://code.claude.com/docs/en/channels-reference) protocol, so Claude sees them immediately — without interfering with user input.
+A **broker daemon** runs separately with a SQLite database. Each Claude Code session has its own MCP server that connects to the broker. When Claude calls `register` with an alias, the alias becomes the peer ID — stable and reusable across sessions. The MCP server then starts polling the broker every second. Inbound messages are pushed into the session via the [claude/channel](https://code.claude.com/docs/en/channels-reference) protocol, so Claude sees them immediately — without interfering with user input.
 
 ```
                     ┌───────────────────────────┐
