@@ -25,7 +25,6 @@
 
 ### 요구사항
 
-- macOS
 - [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
 - [Claude Code](https://claude.ai/code) v2.1.80+
 - claude.ai 로그인 (채널은 API key 인증 불가)
