@@ -1,6 +1,6 @@
 # claude-peers
 
-> [nice1st/claude-peers-mcp](https://github.com/nice1st/claude-peers-mcp)는 [anthropics/claude-peers-mcp](https://github.com/anthropics/claude-peers-mcp)의 포크입니다.
+> [nice1st/claude-peers-mcp](https://github.com/nice1st/claude-peers-mcp)는 [louislva/claude-peers-mcp](https://github.com/louislva/claude-peers-mcp)의 포크입니다.
 
 여러 머신의 Claude Code 인스턴스가 서로를 발견하고 메시지를 주고받을 수 있는 MCP 채널 플러그인.
 
@@ -150,4 +150,4 @@ CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 
 ---
 
-원본: [anthropics/claude-peers-mcp](https://github.com/anthropics/claude-peers-mcp)
+원본: [louislva/claude-peers-mcp](https://github.com/louislva/claude-peers-mcp)
