@@ -2,7 +2,7 @@
   "mcpServers": {
     "claude-peers": {
       "command": "bun",
-      "args": ["./server.ts"]
+      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"]
     }
   }
 }

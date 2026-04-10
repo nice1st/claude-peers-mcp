@@ -1,0 +1,11 @@
+{
+  "name": "claude-peers",
+  "description": "Peer discovery and messaging channel for Claude Code",
+  "version": "0.2.0",
+  "author": {
+    "name": "nice1st"
+  },
+  "homepage": "https://github.com/nice1st/claude-peers-mcp",
+  "repository": "https://github.com/nice1st/claude-peers-mcp",
+  "keywords": ["peers", "messaging", "channel", "collaboration"]
+}

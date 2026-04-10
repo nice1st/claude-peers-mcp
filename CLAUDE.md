@@ -10,19 +10,23 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 
 ## Architecture
 
-- `broker.ts` — Singleton HTTP daemon (localhost:7899 or remote) + SQLite. **Must be started separately.**
-- `server.ts` — MCP stdio server, one per Claude Code instance. Connects to broker, exposes tools, pushes channel notifications. **Does NOT auto-register.** Claude must call `register` tool first.
-- `shared/types.ts` — Shared TypeScript types for broker API.
-- `cli.ts` — CLI utility for inspecting broker state.
+- `broker.ts` — HTTP daemon (0.0.0.0:7899) + SQLite. 리모트 머신에서 별도 실행. heartbeat 타임아웃으로 stale peer 정리.
+- `server.ts` — MCP stdio server. 플러그인으로 배포됨. broker에 HTTP로 통신. Claude가 `register` 도구 호출 후 동작.
+- `shared/types.ts` — broker API 공유 타입.
+- `cli.ts` — broker 상태 조회 CLI. `CLAUDE_PEERS_BROKER_URL` 지원.
+- `.claude-plugin/` — Claude Code 플러그인 매니페스트 (marketplace + plugin).
+- `skills/` — `/register`, `/peers`, `/send` 슬래시 커맨드.
 
 ## Workflow
 
 ```
-1. Start broker separately:     bun broker.ts
-2. Start Claude Code session:   claude --dangerously-load-development-channels server:claude-peers
-3. Claude calls register tool:  registers with broker, starts polling/heartbeat
-4. Claude sends/receives messages via channel push
-5. Claude calls unregister:     stops polling/heartbeat, disconnects
+1. 브로커 실행:          bun broker.ts (리모트 서버)
+2. 플러그인 설치:        /plugin marketplace add nice1st/claude-peers-mcp
+                         /plugin install claude-peers
+3. 세션 시작:            claude --channels plugin:claude-peers@nice1st/claude-peers-mcp
+4. 등록:                 /register <alias>
+5. 메시지 송수신:        /send <peer-id> <message>
+6. 종료:                 unregister
 ```
 
 ## Tools
@@ -39,17 +43,11 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 ## Running
 
 ```bash
-# 1. Start broker (separate process)
+# Broker (리모트 서버)
 bun broker.ts
 
-# 2. Start Claude Code with channel
-claude --dangerously-load-development-channels server:claude-peers
-
-# CLI:
-bun cli.ts status
-bun cli.ts peers
-bun cli.ts send <peer-id> <message>
-bun cli.ts kill-broker
+# CLI
+CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 ```
 
 ## Environment Variables
@@ -57,8 +55,10 @@ bun cli.ts kill-broker
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CLAUDE_PEERS_BROKER_URL` | — | Remote broker URL (overrides port) |
-| `CLAUDE_PEERS_PORT` | `7899` | Broker port (localhost) |
+| `CLAUDE_PEERS_PORT` | `7899` | Broker port |
+| `CLAUDE_PEERS_HOST` | `0.0.0.0` | Broker bind address |
 | `CLAUDE_PEERS_DB` | `~/.claude-peers.db` | SQLite database path |
+| `CLAUDE_PEERS_STALE_TIMEOUT` | `60000` | Peer staleness timeout (ms) |
 
 ## Bun
 

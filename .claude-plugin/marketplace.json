@@ -1,0 +1,19 @@
+{
+  "name": "claude-peers-mcp",
+  "owner": {
+    "name": "nice1st"
+  },
+  "metadata": {
+    "description": "Peer discovery and messaging channel for Claude Code instances",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-peers",
+      "source": "./",
+      "description": "Peer discovery and messaging channel for Claude Code",
+      "category": "collaboration",
+      "tags": ["peers", "messaging", "channel", "collaboration"]
+    }
+  ]
+}

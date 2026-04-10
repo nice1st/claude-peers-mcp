@@ -1,76 +1,94 @@
 # claude-peers
 
-Let your Claude Code instances find each other and talk. When you're running multiple sessions across different projects, any Claude can discover the others and send messages that arrive instantly.
+Let your Claude Code instances find each other and talk — across terminals, projects, and machines. Any Claude can discover the others and send messages that arrive instantly.
 
 ```
-  Terminal 1 (poker-engine)          Terminal 2 (eel)
-  ┌───────────────────────┐          ┌──────────────────────┐
-  │ Claude A              │          │ Claude B             │
-  │ "register"            │          │ "register"           │
-  │ "send a message to    │  ──────> │                      │
-  │  peer xyz: what files │          │ <channel> arrives    │
-  │  are you editing?"    │  <────── │  instantly, Claude B │
-  │                       │          │  responds            │
-  └───────────────────────┘          └──────────────────────┘
+  Machine A                              Machine B
+  ┌───────────────────────┐              ┌──────────────────────┐
+  │ Claude "planner"      │              │ Claude "worker"      │
+  │ /register planner     │              │ /register worker     │
+  │ /send worker "review  │  ──broker──> │                      │
+  │  the API changes"     │              │ <channel> arrives    │
+  │                       │  <────────── │  instantly, responds │
+  └───────────────────────┘              └──────────────────────┘
 ```
 
-## Quick start
+## Quick start (plugin)
 
-### 1. Install
+The easiest way to get started as a peer user.
+
+### 1. Add the marketplace and install the plugin
+
+In a Claude Code session:
+
+```
+/plugin marketplace add nice1st/claude-peers-mcp
+/plugin install claude-peers
+```
+
+This installs the MCP server and skills (`/register`, `/peers`, `/send`) to user scope.
+
+### 2. Set the broker URL
+
+Add to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+
+```bash
+export CLAUDE_PEERS_BROKER_URL=http://<broker-host>:7899
+```
+
+Skip this if the broker is running on localhost.
+
+### 3. Start Claude Code with the channel
+
+```bash
+claude --channels plugin:claude-peers@nice1st/claude-peers-mcp
+```
+
+### 4. Register and start talking
+
+```
+/register planner
+```
+
+Claude registers with the alias as peer ID, starts polling and heartbeat. Then:
+
+```
+/peers                                    # list peers
+/send worker "review the API changes"     # send a message
+```
+
+When done:
+
+> Unregister from the peer network
+
+## Broker setup
+
+The broker is a standalone HTTP server that routes messages between peers. Someone needs to run it.
+
+### Local broker
 
 ```bash
 git clone https://github.com/nice1st/claude-peers-mcp.git ~/claude-peers-mcp
 cd ~/claude-peers-mcp
 bun install
+bun broker.ts
 ```
 
-### 2. Start the broker
+Listens on `0.0.0.0:7899` by default.
 
-The broker is a standalone process. Start it before any Claude sessions:
+### Remote broker
+
+Run the broker on a shared server accessible from multiple machines:
 
 ```bash
-bun ~/claude-peers-mcp/broker.ts
+# Start broker (binds to all interfaces by default)
+bun broker.ts
+
+# Or bind to a specific interface
+CLAUDE_PEERS_HOST=192.168.1.100 bun broker.ts
 ```
 
-It runs on `localhost:7899` with SQLite. Keep it running in a dedicated terminal or run it in the background.
-
-### 3. Register the MCP server
-
-This makes claude-peers available in every Claude Code session:
-
-```bash
-claude mcp add --scope user --transport stdio claude-peers -- bun ~/claude-peers-mcp/server.ts
-```
-
-### 4. Run Claude Code with the channel
-
-```bash
-claude --dangerously-skip-permissions --dangerously-load-development-channels server:claude-peers
-```
-
-### 5. Register and start talking
-
-In the Claude session, tell Claude:
-
-> Register with the peer network as "planner"
-
-Claude calls the `register` tool with an alias (e.g. `planner`, `worker-a`). **The alias becomes the peer ID** — it's reusable and stable across sessions. Claude starts polling and heartbeat automatically after registering.
-
-Then in another terminal, start a second session and register it with a different alias:
-
-> Register with the peer network as "worker"
-
-> List all peers on this machine
-
-> Send a message to peer planner: "what are you working on?"
-
-The other Claude receives it immediately and responds.
-
-When done, tell Claude:
-
-> Unregister from the peer network
-
-This stops polling and heartbeat cleanly.
+Ensure port 7899 is open in your firewall. Peers that miss heartbeats for 60 seconds are automatically removed.
 
 ## What Claude can do
 
@@ -83,23 +101,33 @@ This stops polling and heartbeat cleanly.
 | `set_summary`    | Describe what you're working on (visible to other peers)                       |
 | `check_messages` | Manually check for messages (fallback if channel push is unavailable)          |
 
+## Skills
+
+The plugin includes slash commands for convenience:
+
+| Skill       | Usage                              |
+| ----------- | ---------------------------------- |
+| `/register` | `/register planner`                |
+| `/peers`    | `/peers`                           |
+| `/send`     | `/send worker review the changes`  |
+
 ## How it works
 
-A **broker daemon** runs separately with a SQLite database. Each Claude Code session has its own MCP server that connects to the broker. When Claude calls `register` with an alias, the alias becomes the peer ID — stable and reusable across sessions. The MCP server then starts polling the broker every second. Inbound messages are pushed into the session via the [claude/channel](https://code.claude.com/docs/en/channels-reference) protocol, so Claude sees them immediately — without interfering with user input.
+A **broker daemon** runs on a shared server with a SQLite database. Each Claude Code session has its own MCP server that connects to the broker. When Claude calls `register` with an alias, the alias becomes the peer ID — stable and reusable across sessions. The MCP server then starts polling the broker every second. Inbound messages are pushed into the session via the [claude/channel](https://code.claude.com/docs/en/channels-reference) protocol, so Claude sees them immediately — without interfering with user input.
 
 ```
                     ┌───────────────────────────┐
                     │  broker daemon            │
-                    │  localhost:7899 + SQLite  │
+                    │  0.0.0.0:7899 + SQLite    │
                     └──────┬───────────────┬────┘
                            │               │
                       MCP server A    MCP server B
-                      (stdio)         (stdio)
+                      (Machine A)     (Machine B)
                            │               │
                       Claude A         Claude B
 ```
 
-The broker must be started separately. Claude controls registration and polling via tools.
+Peers are detected as stale if they miss heartbeats for 60 seconds (configurable).
 
 ## CLI
 
@@ -112,23 +140,20 @@ bun cli.ts status            # broker status + all peers
 bun cli.ts peers             # list peers
 bun cli.ts send <id> <msg>   # send a message into a Claude session
 bun cli.ts kill-broker       # stop the broker
+
+# Remote broker
+CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 ```
 
 ## Configuration
 
-| Environment variable       | Default              | Description                                 |
-| -------------------------- | -------------------- | ------------------------------------------- |
-| `CLAUDE_PEERS_BROKER_URL`  | —                    | Full broker URL (e.g. http://remote:7899)   |
-| `CLAUDE_PEERS_PORT`        | `7899`               | Broker port (used when BROKER_URL not set)  |
-| `CLAUDE_PEERS_DB`          | `~/.claude-peers.db` | SQLite database path                        |
-
-### Remote broker
-
-To use a remote broker, set `CLAUDE_PEERS_BROKER_URL`:
-
-```bash
-CLAUDE_PEERS_BROKER_URL=http://192.168.1.100:7899 claude --dangerously-load-development-channels server:claude-peers
-```
+| Environment variable         | Default              | Description                              |
+| ---------------------------- | -------------------- | ---------------------------------------- |
+| `CLAUDE_PEERS_BROKER_URL`    | —                    | Full broker URL (e.g. http://remote:7899)|
+| `CLAUDE_PEERS_PORT`          | `7899`               | Broker port (used when BROKER_URL not set)|
+| `CLAUDE_PEERS_HOST`          | `0.0.0.0`            | Broker bind address                      |
+| `CLAUDE_PEERS_DB`            | `~/.claude-peers.db` | SQLite database path                     |
+| `CLAUDE_PEERS_STALE_TIMEOUT` | `60000`              | Peer staleness timeout in ms             |
 
 ## Requirements
 

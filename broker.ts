@@ -24,7 +24,9 @@ import type {
 } from "./shared/types.ts";
 
 const PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
+const HOST = process.env.CLAUDE_PEERS_HOST ?? "0.0.0.0";
 const DB_PATH = process.env.CLAUDE_PEERS_DB ?? `${process.env.HOME}/.claude-peers.db`;
+const STALE_TIMEOUT_MS = parseInt(process.env.CLAUDE_PEERS_STALE_TIMEOUT ?? "60000", 10);
 
 // --- Database setup ---
 
@@ -58,18 +60,13 @@ db.run(`
   )
 `);
 
-// Clean up stale peers (PIDs that no longer exist) on startup
+// Clean up stale peers (no heartbeat within STALE_TIMEOUT_MS)
 function cleanStalePeers() {
-  const peers = db.query("SELECT id, pid FROM peers").all() as { id: string; pid: number }[];
-  for (const peer of peers) {
-    try {
-      // Check if process is still alive (signal 0 doesn't kill, just checks)
-      process.kill(peer.pid, 0);
-    } catch {
-      // Process doesn't exist, remove it
-      db.run("DELETE FROM peers WHERE id = ?", [peer.id]);
-      db.run("DELETE FROM messages WHERE to_id = ? AND delivered = 0", [peer.id]);
-    }
+  const cutoff = new Date(Date.now() - STALE_TIMEOUT_MS).toISOString();
+  const stale = db.query("SELECT id FROM peers WHERE last_seen < ?").all(cutoff) as { id: string }[];
+  for (const peer of stale) {
+    db.run("DELETE FROM peers WHERE id = ?", [peer.id]);
+    db.run("DELETE FROM messages WHERE to_id = ? AND delivered = 0", [peer.id]);
   }
 }
 
@@ -145,12 +142,6 @@ function handleRegister(body: RegisterRequest): RegisterResponse {
     deletePeer.run(existingById.id);
   }
 
-  // Remove any existing registration for this PID (different alias, same process)
-  const existingByPid = db.query("SELECT id FROM peers WHERE pid = ?").get(body.pid) as { id: string } | null;
-  if (existingByPid) {
-    deletePeer.run(existingByPid.id);
-  }
-
   insertPeer.run(id, body.pid, body.cwd, body.git_root, body.tty, body.summary, now, now);
   return { id };
 }
@@ -190,17 +181,9 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
     peers = peers.filter((p) => p.id !== body.exclude_id);
   }
 
-  // Verify each peer's process is still alive
-  return peers.filter((p) => {
-    try {
-      process.kill(p.pid, 0);
-      return true;
-    } catch {
-      // Clean up dead peer
-      deletePeer.run(p.id);
-      return false;
-    }
-  });
+  // Filter out stale peers (no heartbeat within timeout)
+  const cutoff = new Date(Date.now() - STALE_TIMEOUT_MS).toISOString();
+  return peers.filter((p) => p.last_seen >= cutoff);
 }
 
 function handleSendMessage(body: SendMessageRequest): { ok: boolean; error?: string } {
@@ -233,7 +216,7 @@ function handleUnregister(body: { id: string }): void {
 
 Bun.serve({
   port: PORT,
-  hostname: "127.0.0.1",
+  hostname: HOST,
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -276,4 +259,4 @@ Bun.serve({
   },
 });
 
-console.error(`[claude-peers broker] listening on 127.0.0.1:${PORT} (db: ${DB_PATH})`);
+console.error(`[claude-peers broker] listening on ${HOST}:${PORT} (db: ${DB_PATH})`);
