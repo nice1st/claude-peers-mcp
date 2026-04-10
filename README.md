@@ -13,20 +13,13 @@ Let your Claude Code instances find each other and talk — across terminals, pr
   └───────────────────────┘              └──────────────────────┘
 ```
 
-## Quick start (plugin)
+## Quick start
 
-The easiest way to get started as a peer user.
+### 1. Clone and set up the plugin
 
-### 1. Add the marketplace and install the plugin
-
-In a Claude Code session:
-
+```bash
+git clone https://github.com/nice1st/claude-peers-mcp.git ~/claude-peers-mcp
 ```
-/plugin marketplace add nice1st/claude-peers-mcp
-/plugin install claude-peers
-```
-
-This installs the MCP server and skills (`/register`, `/peers`, `/send`) to user scope.
 
 ### 2. Set the broker URL
 
@@ -38,10 +31,10 @@ export CLAUDE_PEERS_BROKER_URL=http://<broker-host>:7899
 
 Skip this if the broker is running on localhost.
 
-### 3. Start Claude Code with the channel
+### 3. Start Claude Code with the plugin and channel
 
 ```bash
-claude --channels plugin:claude-peers@nice1st/claude-peers-mcp
+claude --plugin-dir ~/claude-peers-mcp/plugin --dangerously-load-development-channels server:plugin:claude-peers:claude-peers
 ```
 
 ### 4. Register and start talking

@@ -28,9 +28,9 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 
 ```
 1. 브로커 실행:          bun broker.ts (리모트 서버)
-2. 플러그인 설치:        /plugin marketplace add nice1st/claude-peers-mcp
-                         /plugin install claude-peers
-3. 세션 시작:            claude --channels plugin:claude-peers@nice1st/claude-peers-mcp
+2. 플러그인 설치:        git clone → --plugin-dir로 로드
+3. 세션 시작:            claude --plugin-dir ~/claude-peers-mcp/plugin
+                           --dangerously-load-development-channels server:plugin:claude-peers:claude-peers
 4. 등록:                 /register <alias>
 5. 메시지 송수신:        /send <peer-id> <message>
 6. 종료:                 unregister
