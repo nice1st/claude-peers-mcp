@@ -1,7 +1,7 @@
 {
   "name": "claude-peers",
   "description": "Peer discovery and messaging channel for Claude Code",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "nice1st"
   },
