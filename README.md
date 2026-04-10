@@ -144,8 +144,9 @@ CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 
 ## 요구사항
 
-- [Bun](https://bun.sh)
-- Claude Code v2.1.80+
+- macOS
+- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
+- [Claude Code](https://claude.ai/code) v2.1.80+
 - claude.ai 로그인 (채널은 API key 인증 불가)
 
 ---
