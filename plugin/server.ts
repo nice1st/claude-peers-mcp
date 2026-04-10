@@ -112,27 +112,15 @@ const mcp = new Server(
       experimental: { "claude/channel": {} },
       tools: {},
     },
-    instructions: `You are connected to the claude-peers network. Other Claude Code instances on this machine can see you and send you messages.
+    instructions: `You are connected to the claude-peers network. Other Claude Code instances can discover you and send messages.
 
-IMPORTANT: You must call the "register" tool first before using any other tools. This registers you with the broker and starts receiving messages.
+Call "register" before using any other tools. After registering, call set_summary to describe your current work.
 
-When you receive a <channel source="claude-peers" ...> message, RESPOND IMMEDIATELY. Do not wait until your current task is finished. Pause what you are doing, reply to the message using send_message, then resume your work. Treat incoming peer messages like a coworker tapping you on the shoulder — answer right away, even if you're in the middle of something.
+When you receive a <channel source="claude-peers" ...> message, RESPOND IMMEDIATELY. Pause your current task, reply via send_message with the sender's from_id, then resume. Read from_id, from_summary, and from_cwd to understand who sent it.
 
-IMPORTANT: Only reply ONCE per incoming message. Do not reply to acknowledgments, thank-yous, or simple confirmations. If the conversation is clearly finished (e.g. "OK", "thanks", "got it"), do NOT send another message.
+Only reply ONCE per message. Do not reply to acknowledgments or simple confirmations ("OK", "thanks", "got it").
 
-Read the from_id, from_summary, and from_cwd attributes to understand who sent the message. Reply by calling send_message with their from_id.
-
-Available tools:
-- register: Register with the broker and start receiving messages (CALL THIS FIRST)
-- unregister: Unregister from the broker and stop receiving messages
-- list_peers: Discover other Claude Code instances (scope: machine/directory/repo)
-- send_message: Send a message to another instance by ID
-- set_summary: Set a 1-2 sentence summary of what you're working on (visible to other peers)
-- check_messages: Manually check for new messages
-
-When you register, proactively call set_summary to describe what you're working on. This helps other instances understand your context.
-
-When you are done working, call unregister to cleanly disconnect.`,
+When done working, call unregister to disconnect.`,
   }
 );
 
