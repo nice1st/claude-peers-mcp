@@ -15,6 +15,13 @@
   └───────────────────────┘              └──────────────────────┘
 ```
 
+## 요구사항
+
+- macOS
+- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
+- [Claude Code](https://claude.ai/code) v2.1.80+
+- claude.ai 로그인 (채널은 API key 인증 불가)
+
 ## 주요 개선
 
 - **리모트 브로커** — 다른 머신에서 broker에 접속 가능 (0.0.0.0 바인딩, heartbeat 기반 stale peer 정리)
@@ -141,13 +148,6 @@ CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 | `CLAUDE_PEERS_HOST` | `0.0.0.0` | broker 바인딩 주소 |
 | `CLAUDE_PEERS_DB` | `~/.claude-peers.db` | SQLite DB 경로 |
 | `CLAUDE_PEERS_STALE_TIMEOUT` | `60000` | 피어 stale 타임아웃 (ms) |
-
-## 요구사항
-
-- macOS
-- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
-- [Claude Code](https://claude.ai/code) v2.1.80+
-- claude.ai 로그인 (채널은 API key 인증 불가)
 
 ---
 
