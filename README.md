@@ -15,13 +15,6 @@
   └───────────────────────┘              └──────────────────────┘
 ```
 
-## 요구사항
-
-- macOS
-- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
-- [Claude Code](https://claude.ai/code) v2.1.80+
-- claude.ai 로그인 (채널은 API key 인증 불가)
-
 ## 주요 개선
 
 - **리모트 브로커** — 다른 머신에서 broker에 접속 가능 (0.0.0.0 바인딩, heartbeat 기반 stale peer 정리)
@@ -29,6 +22,13 @@
 - **스킬 포함** — `/register`, `/peers`, `/send` 슬래시 커맨드 내장
 
 ## 피어 사용자 가이드
+
+### 요구사항
+
+- macOS
+- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
+- [Claude Code](https://claude.ai/code) v2.1.80+
+- claude.ai 로그인 (채널은 API key 인증 불가)
 
 ### 마켓플레이스 설치
 
