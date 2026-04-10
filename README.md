@@ -13,12 +13,15 @@ Let your Claude Code instances find each other and talk — across terminals, pr
   └───────────────────────┘              └──────────────────────┘
 ```
 
-## Quick start
+## Quick start (marketplace)
 
-### 1. Clone and set up the plugin
+### 1. Install the plugin
 
-```bash
-git clone https://github.com/nice1st/claude-peers-mcp.git ~/claude-peers-mcp
+In any Claude Code session:
+
+```
+/plugin marketplace add nice1st/claude-peers-mcp
+/plugin install claude-peers
 ```
 
 ### 2. Set the broker URL
@@ -31,10 +34,10 @@ export CLAUDE_PEERS_BROKER_URL=http://<broker-host>:7899
 
 Skip this if the broker is running on localhost.
 
-### 3. Start Claude Code with the plugin and channel
+### 3. Start Claude Code with the channel
 
 ```bash
-claude --plugin-dir ~/claude-peers-mcp/plugin --dangerously-load-development-channels server:plugin:claude-peers:claude-peers
+claude --dangerously-load-development-channels plugin:claude-peers@nice1st/claude-peers-mcp
 ```
 
 ### 4. Register and start talking
@@ -53,6 +56,18 @@ Claude registers with the alias as peer ID, starts polling and heartbeat. Then:
 When done:
 
 > Unregister from the peer network
+
+## Quick start (plugin-dir)
+
+For development or without marketplace:
+
+```bash
+git clone https://github.com/nice1st/claude-peers-mcp.git ~/claude-peers-mcp
+```
+
+```bash
+CLAUDE_PEERS_BROKER_URL=http://<broker-host>:7899 claude --plugin-dir ~/claude-peers-mcp/plugin --dangerously-load-development-channels server:plugin:claude-peers:claude-peers
+```
 
 ## Broker setup
 
