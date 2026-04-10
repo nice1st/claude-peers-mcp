@@ -11,7 +11,10 @@
   "mcpServers": {
     "claude-peers": {
       "command": "bun",
-      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"]
+      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"],
+      "env": {
+        "CLAUDE_PEERS_BROKER_URL": "${CLAUDE_PEERS_BROKER_URL}"
+      }
     }
   }
 }
