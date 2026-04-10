@@ -1,13 +1,11 @@
 {
-  "name": "claude-peers",
+  "name": "claude-peers-broker",
   "version": "0.2.0",
-  "description": "Peer discovery and messaging for Claude Code instances",
+  "description": "Broker for claude-peers",
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "bun install --no-summary && bun server.ts",
     "broker": "bun broker.ts",
-    "server": "bun server.ts",
     "test": "bun test"
   },
   "devDependencies": {
@@ -15,8 +13,5 @@
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1"
   }
 }

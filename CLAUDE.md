@@ -10,12 +10,19 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 
 ## Architecture
 
-- `broker.ts` — HTTP daemon (0.0.0.0:7899) + SQLite. 리모트 머신에서 별도 실행. heartbeat 타임아웃으로 stale peer 정리.
-- `server.ts` — MCP stdio server. 플러그인으로 배포됨. broker에 HTTP로 통신. Claude가 `register` 도구 호출 후 동작.
-- `shared/types.ts` — broker API 공유 타입.
+레포 루트는 브로커 + 마켓플레이스, `plugin/`은 사용자에게 배포되는 플러그인.
+
+### 레포 루트 (브로커/운영)
+- `broker.ts` — HTTP daemon (0.0.0.0:7899) + SQLite. heartbeat 타임아웃으로 stale peer 정리.
 - `cli.ts` — broker 상태 조회 CLI. `CLAUDE_PEERS_BROKER_URL` 지원.
-- `.claude-plugin/` — Claude Code 플러그인 매니페스트 (marketplace + plugin).
-- `skills/` — `/register`, `/peers`, `/send` 슬래시 커맨드.
+- `shared/types.ts` — broker API DTO.
+- `.claude-plugin/marketplace.json` — 마켓플레이스 매니페스트 (`source: "./plugin"`).
+
+### plugin/ (플러그인 배포)
+- `plugin/server.ts` — MCP stdio server. broker에 HTTP로 통신.
+- `plugin/shared/types.ts` — broker API DTO (복사본).
+- `plugin/.claude-plugin/plugin.json` — 플러그인 매니페스트 + mcpServers 정의.
+- `plugin/skills/` — `/register`, `/peers`, `/send` 슬래시 커맨드.
 
 ## Workflow
 

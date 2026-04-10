@@ -7,5 +7,11 @@
   },
   "homepage": "https://github.com/nice1st/claude-peers-mcp",
   "repository": "https://github.com/nice1st/claude-peers-mcp",
-  "keywords": ["peers", "messaging", "channel", "collaboration"]
+  "keywords": ["peers", "messaging", "channel", "collaboration"],
+  "mcpServers": {
+    "claude-peers": {
+      "command": "bun",
+      "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"]
+    }
+  }
 }

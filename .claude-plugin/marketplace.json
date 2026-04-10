@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "claude-peers",
-      "source": "./",
+      "source": "./plugin",
       "description": "Peer discovery and messaging channel for Claude Code",
       "category": "collaboration",
       "tags": ["peers", "messaging", "channel", "collaboration"]
