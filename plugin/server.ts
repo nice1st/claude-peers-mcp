@@ -27,7 +27,10 @@ import type {
 // --- Configuration ---
 
 const BROKER_PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
-const BROKER_URL = process.env.CLAUDE_PEERS_BROKER_URL ?? `http://127.0.0.1:${BROKER_PORT}`;
+const rawBrokerUrl = process.env.CLAUDE_PEERS_BROKER_URL;
+const BROKER_URL = (rawBrokerUrl && !rawBrokerUrl.startsWith("${"))
+  ? rawBrokerUrl
+  : `http://127.0.0.1:${BROKER_PORT}`;
 const POLL_INTERVAL_MS = 1000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -589,6 +592,10 @@ async function main() {
 
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
+
+  // MCP stdio transport: stdin 닫히면 부모(Claude Code)가 종료한 것이므로 같이 종료
+  process.stdin.on("end", cleanup);
+  process.stdin.on("close", cleanup);
 }
 
 main().catch((e) => {
