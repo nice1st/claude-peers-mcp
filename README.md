@@ -49,7 +49,7 @@ localhost broker를 사용하면 생략 가능.
 ### 세션 시작
 
 ```bash
-claude --dangerously-load-development-channels server:plugin:claude-peers:claude-peers
+claude --dangerously-load-development-channels plugin:claude-peers@claude-peers-mcp
 ```
 
 ### 등록 및 사용
