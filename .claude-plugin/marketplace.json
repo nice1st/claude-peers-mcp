@@ -4,14 +4,14 @@
     "name": "nice1st"
   },
   "metadata": {
-    "description": "Peer discovery and messaging channel for Claude Code instances",
+    "description": "Real-time peer messaging between Claude Code instances across machines via channel protocol",
     "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "claude-peers",
       "source": "./plugin",
-      "description": "Peer discovery and messaging channel for Claude Code",
+      "description": "Real-time peer messaging between Claude Code instances across machines via channel protocol",
       "category": "collaboration",
       "tags": ["peers", "messaging", "channel", "collaboration"]
     }

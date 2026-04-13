@@ -1,8 +1,13 @@
 # claude-peers
 
-> [nice1st/claude-peers-mcp](https://github.com/nice1st/claude-peers-mcp)는 [louislva/claude-peers-mcp](https://github.com/louislva/claude-peers-mcp)의 포크입니다.
+> Forked from [louislva/claude-peers-mcp](https://github.com/louislva/claude-peers-mcp) — real-time messaging between Claude Code instances across machines via channel protocol (MCP plugin)
 
 여러 머신의 Claude Code 인스턴스가 서로를 발견하고 메시지를 주고받을 수 있는 MCP 채널 플러그인.
+
+**원본 대비 주요 개선:**
+- **리모트 브로커** — 다른 머신에서 broker에 접속 가능 (0.0.0.0 바인딩, heartbeat 기반 stale peer 정리)
+- **플러그인 배포** — `plugin/` 서브디렉토리로 분리. 마켓플레이스 또는 `--plugin-dir`로 설치
+- **스킬 포함** — `/register`, `/peers`, `/send` 슬래시 커맨드 내장
 
 ```
   Machine A                              Machine B
@@ -14,12 +19,6 @@
   │                       │  <────────── │  instantly, responds │
   └───────────────────────┘              └──────────────────────┘
 ```
-
-## 주요 개선
-
-- **리모트 브로커** — 다른 머신에서 broker에 접속 가능 (0.0.0.0 바인딩, heartbeat 기반 stale peer 정리)
-- **플러그인 배포** — `plugin/` 서브디렉토리로 분리. 마켓플레이스 또는 `--plugin-dir`로 설치
-- **스킬 포함** — `/register`, `/peers`, `/send` 슬래시 커맨드 내장
 
 ## 피어 사용자 가이드
 
