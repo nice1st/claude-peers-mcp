@@ -242,8 +242,6 @@ async function startSSELoop(reader: ReadableStreamDefaultReader<Uint8Array>) {
               content: json.text,
               meta: {
                 from_id: json.from_id,
-                from_summary: json.from_summary,
-                from_cwd: json.from_cwd,
                 sent_at: json.sent_at,
               },
             },

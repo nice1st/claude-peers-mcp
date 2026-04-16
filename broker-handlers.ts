@@ -105,13 +105,9 @@ export function createHandlers() {
       return { ok: false, error: `Peer ${body.to_id} not found` };
     }
 
-    // 발신자 메타 포함 (수신자가 별도 조회 불필요)
-    const fromEntry = peers.get(body.from_id);
     const event = {
       type: "message",
       from_id: body.from_id,
-      from_summary: fromEntry?.summary ?? "",
-      from_cwd: fromEntry?.cwd ?? "",
       text: body.text,
       sent_at: new Date().toISOString(),
     };

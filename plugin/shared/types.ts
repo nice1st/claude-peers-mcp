@@ -54,8 +54,6 @@ export interface SSERegisteredEvent {
 export interface SSEMessageEvent {
   type: "message";
   from_id: string;
-  from_summary: string;
-  from_cwd: string;
   text: string;
   sent_at: string;
 }
