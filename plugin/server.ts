@@ -309,11 +309,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         }
 
         // SSE 스트림 읽기 시작
-        sseReader = res.body.getReader();
+        const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
+        sseReader = reader;
         myId = alias;
 
         // 백그라운드 루프
-        startSSELoop(sseReader);
+        startSSELoop(reader);
 
         log(`Registered as peer ${myId} via SSE`);
         return {

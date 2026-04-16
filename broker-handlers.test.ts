@@ -62,7 +62,7 @@ describe("handleRegister", () => {
       return m;
     })();
     expect(sent.length).toBe(1);
-    const event = JSON.parse(sent[0].replace("data: ", "").trim());
+    const event = JSON.parse(sent[0]!.replace("data: ", "").trim());
     expect(event.type).toBe("registered");
     expect(event.id).toBe("planner");
   });
@@ -81,7 +81,7 @@ describe("handleRegister", () => {
 
     const peerList = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
     expect(peerList).toHaveLength(1);
-    expect(peerList[0].cwd).toBe("/new");
+    expect(peerList[0]!.cwd).toBe("/new");
   });
 });
 
@@ -104,7 +104,7 @@ describe("handleSendMessage", () => {
 
     // sent[0] = registered 이벤트, sent[1] = message 이벤트
     expect(sent.length).toBe(2);
-    const event = JSON.parse(sent[1].replace("data: ", "").trim());
+    const event = JSON.parse(sent[1]!.replace("data: ", "").trim());
     expect(event.type).toBe("message");
     expect(event.from_id).toBe("sender");
     expect(event.text).toBe("hello");
@@ -138,7 +138,7 @@ describe("handleListPeers", () => {
     registerPeer(handlers, "b", { cwd: "/project-b" });
     const list = handlers.handleListPeers({ scope: "directory", cwd: "/project-a", git_root: null });
     expect(list).toHaveLength(1);
-    expect(list[0].id).toBe("a");
+    expect(list[0]!.id).toBe("a");
   });
 
   test("scope=repo 같은 git_root만", () => {
@@ -164,7 +164,7 @@ describe("handleListPeers", () => {
     registerPeer(handlers, "other");
     const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null, exclude_id: "me" });
     expect(list).toHaveLength(1);
-    expect(list[0].id).toBe("other");
+    expect(list[0]!.id).toBe("other");
   });
 });
 
@@ -203,7 +203,7 @@ describe("handleSetSummary", () => {
     registerPeer(handlers, "peer");
     handlers.handleSetSummary({ id: "peer", summary: "리뷰 중" });
     const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(list[0].summary).toBe("리뷰 중");
+    expect(list[0]!.summary).toBe("리뷰 중");
   });
 });
 
