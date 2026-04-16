@@ -1,156 +1,140 @@
 /**
  * Broker handler logic — separated for testability.
- * All handlers receive a Database instance and staleTimeoutMs.
+ * Peers are tracked in memory (no SQLite). SSE controllers are stored per peer.
  */
 
-import { Database } from "bun:sqlite";
 import type {
   RegisterRequest,
   RegisterResponse,
-  HeartbeatRequest,
   SetSummaryRequest,
   ListPeersRequest,
   SendMessageRequest,
-  PollMessagesRequest,
-  PollMessagesResponse,
   Peer,
-  Message,
 } from "./shared/types.ts";
 
-export function initSchema(db: Database) {
-  db.run("PRAGMA journal_mode = WAL");
-  db.run("PRAGMA busy_timeout = 3000");
+const encoder = new TextEncoder();
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS peers (
-      id TEXT PRIMARY KEY,
-      pid INTEGER NOT NULL,
-      cwd TEXT NOT NULL,
-      git_root TEXT,
-      tty TEXT,
-      summary TEXT NOT NULL DEFAULT '',
-      registered_at TEXT NOT NULL,
-      last_seen TEXT NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_id TEXT NOT NULL,
-      to_id TEXT NOT NULL,
-      text TEXT NOT NULL,
-      sent_at TEXT NOT NULL,
-      delivered INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (from_id) REFERENCES peers(id),
-      FOREIGN KEY (to_id) REFERENCES peers(id)
-    )
-  `);
+function encode(s: string): Uint8Array {
+  return encoder.encode(s);
 }
 
-export function createHandlers(db: Database, staleTimeoutMs: number) {
-  const insertPeer = db.prepare(`
-    INSERT INTO peers (id, pid, cwd, git_root, tty, summary, registered_at, last_seen)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const updateLastSeen = db.prepare(`UPDATE peers SET last_seen = ? WHERE id = ?`);
-  const updateSummary = db.prepare(`UPDATE peers SET summary = ? WHERE id = ?`);
-  const deletePeer = db.prepare(`DELETE FROM peers WHERE id = ?`);
-  const selectAllPeers = db.prepare(`SELECT * FROM peers`);
-  const selectPeersByDirectory = db.prepare(`SELECT * FROM peers WHERE cwd = ?`);
-  const selectPeersByGitRoot = db.prepare(`SELECT * FROM peers WHERE git_root = ?`);
-  const insertMessage = db.prepare(`
-    INSERT INTO messages (from_id, to_id, text, sent_at, delivered)
-    VALUES (?, ?, ?, ?, 0)
-  `);
-  const selectUndelivered = db.prepare(`
-    SELECT * FROM messages WHERE to_id = ? AND delivered = 0 ORDER BY sent_at ASC
-  `);
-  const markDelivered = db.prepare(`UPDATE messages SET delivered = 1 WHERE id = ?`);
+interface PeerEntry {
+  id: string;
+  pid: number;
+  cwd: string;
+  git_root: string | null;
+  tty: string | null;
+  summary: string;
+  registered_at: string;
+  controller: ReadableStreamDefaultController;
+}
 
-  function handleRegister(body: RegisterRequest): RegisterResponse {
+// 모듈 레벨 메모리 map — 테스트에서 peers.clear()로 초기화
+export const peers = new Map<string, PeerEntry>();
+
+export function createHandlers() {
+  function handleRegister(
+    body: RegisterRequest,
+    controller: ReadableStreamDefaultController,
+  ): RegisterResponse {
     const id = body.id;
     const now = new Date().toISOString();
-    const existing = db.query("SELECT id FROM peers WHERE id = ?").get(id) as { id: string } | null;
+
+    // 같은 id 재등록 시 이전 SSE 닫기 (좀비 방지)
+    const existing = peers.get(id);
     if (existing) {
-      deletePeer.run(existing.id);
+      try { existing.controller.close(); } catch { /* already closed */ }
+      peers.delete(id);
     }
-    insertPeer.run(id, body.pid, body.cwd, body.git_root, body.tty, body.summary, now, now);
+
+    const entry: PeerEntry = {
+      id,
+      pid: body.pid,
+      cwd: body.cwd,
+      git_root: body.git_root,
+      tty: body.tty,
+      summary: body.summary,
+      registered_at: now,
+      controller,
+    };
+    peers.set(id, entry);
+
+    // 첫 SSE 이벤트: 등록 완료
+    controller.enqueue(encode(`data: ${JSON.stringify({ type: "registered", id })}\n\n`));
+
     return { id };
   }
 
-  function handleHeartbeat(body: HeartbeatRequest): void {
-    updateLastSeen.run(new Date().toISOString(), body.id);
-  }
-
   function handleSetSummary(body: SetSummaryRequest): void {
-    updateSummary.run(body.summary, body.id);
+    const entry = peers.get(body.id);
+    if (entry) {
+      entry.summary = body.summary;
+    }
   }
 
   function handleListPeers(body: ListPeersRequest): Peer[] {
-    let peers: Peer[];
+    let entries = [...peers.values()];
+
     switch (body.scope) {
-      case "machine":
-        peers = selectAllPeers.all() as Peer[];
-        break;
       case "directory":
-        peers = selectPeersByDirectory.all(body.cwd) as Peer[];
+        entries = entries.filter((e) => e.cwd === body.cwd);
         break;
       case "repo":
         if (body.git_root) {
-          peers = selectPeersByGitRoot.all(body.git_root) as Peer[];
+          entries = entries.filter((e) => e.git_root === body.git_root);
         } else {
-          peers = selectPeersByDirectory.all(body.cwd) as Peer[];
+          entries = entries.filter((e) => e.cwd === body.cwd);
         }
         break;
+      case "machine":
       default:
-        peers = selectAllPeers.all() as Peer[];
+        // 전체 반환
+        break;
     }
+
     if (body.exclude_id) {
-      peers = peers.filter((p) => p.id !== body.exclude_id);
+      entries = entries.filter((e) => e.id !== body.exclude_id);
     }
-    const cutoff = new Date(Date.now() - staleTimeoutMs).toISOString();
-    return peers.filter((p) => p.last_seen >= cutoff);
+
+    return entries.map(({ controller: _c, ...peer }) => peer);
   }
 
   function handleSendMessage(body: SendMessageRequest): { ok: boolean; error?: string } {
-    const target = db.query("SELECT id FROM peers WHERE id = ?").get(body.to_id) as { id: string } | null;
-    if (!target) {
+    const entry = peers.get(body.to_id);
+    if (!entry) {
       return { ok: false, error: `Peer ${body.to_id} not found` };
     }
-    insertMessage.run(body.from_id, body.to_id, body.text, new Date().toISOString());
+
+    const event = {
+      type: "message",
+      from_id: body.from_id,
+      text: body.text,
+      sent_at: new Date().toISOString(),
+    };
+
+    try {
+      entry.controller.enqueue(encode(`data: ${JSON.stringify(event)}\n\n`));
+    } catch {
+      peers.delete(body.to_id);
+      return { ok: false, error: `Peer ${body.to_id} SSE connection closed` };
+    }
+
     return { ok: true };
   }
 
-  function handlePollMessages(body: PollMessagesRequest): PollMessagesResponse {
-    const messages = selectUndelivered.all(body.id) as Message[];
-    for (const msg of messages) {
-      markDelivered.run(msg.id);
-    }
-    return { messages };
-  }
-
   function handleUnregister(body: { id: string }): void {
-    deletePeer.run(body.id);
-  }
-
-  function cleanStalePeers(): void {
-    const cutoff = new Date(Date.now() - staleTimeoutMs).toISOString();
-    const stale = db.query("SELECT id FROM peers WHERE last_seen < ?").all(cutoff) as { id: string }[];
-    for (const peer of stale) {
-      db.run("DELETE FROM peers WHERE id = ?", [peer.id]);
-      db.run("DELETE FROM messages WHERE to_id = ? AND delivered = 0", [peer.id]);
+    const entry = peers.get(body.id);
+    if (entry) {
+      try { entry.controller.close(); } catch { /* already closed */ }
+      peers.delete(body.id);
     }
   }
 
   return {
     handleRegister,
-    handleHeartbeat,
     handleSetSummary,
     handleListPeers,
     handleSendMessage,
-    handlePollMessages,
     handleUnregister,
-    cleanStalePeers,
   };
 }

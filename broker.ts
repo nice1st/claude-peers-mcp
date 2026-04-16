@@ -2,39 +2,37 @@
 /**
  * claude-peers broker daemon
  *
- * A singleton HTTP server backed by SQLite.
- * Tracks all registered Claude Code peers and routes messages between them.
+ * A singleton HTTP server backed by in-memory Map (no SQLite).
+ * Tracks all registered Claude Code peers and routes messages between them via SSE.
  *
  * Run directly: bun broker.ts
  */
 
-import { Database } from "bun:sqlite";
-import { initSchema, createHandlers } from "./broker-handlers.ts";
+import { createHandlers, peers } from "./broker-handlers.ts";
 import type {
   RegisterRequest,
-  HeartbeatRequest,
   SetSummaryRequest,
   ListPeersRequest,
   SendMessageRequest,
-  PollMessagesRequest,
-  Peer,
 } from "./shared/types.ts";
 
 const PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const HOST = process.env.CLAUDE_PEERS_HOST ?? "0.0.0.0";
-const DB_PATH = process.env.CLAUDE_PEERS_DB ?? `${process.env.HOME}/.claude-peers.db`;
-const STALE_TIMEOUT_MS = parseInt(process.env.CLAUDE_PEERS_STALE_TIMEOUT ?? "60000", 10);
 
-// --- Database setup ---
+const handlers = createHandlers();
 
-const db = new Database(DB_PATH);
-initSchema(db);
+const encoder = new TextEncoder();
 
-const handlers = createHandlers(db, STALE_TIMEOUT_MS);
-
-// Clean on startup + every 30s
-handlers.cleanStalePeers();
-setInterval(handlers.cleanStalePeers, 30_000);
+// 30초마다 모든 SSE 연결에 keepalive 전송. write 실패 시 peer 제거.
+setInterval(() => {
+  for (const [id, entry] of peers) {
+    try {
+      entry.controller.enqueue(encoder.encode(": keepalive\n\n"));
+    } catch {
+      peers.delete(id);
+    }
+  }
+}, 30_000);
 
 // --- HTTP Server ---
 
@@ -45,23 +43,46 @@ Bun.serve({
     const url = new URL(req.url);
     const path = url.pathname;
 
-    if (req.method !== "POST") {
+    // GET /health
+    if (req.method === "GET") {
       if (path === "/health") {
-        const peers = db.query("SELECT COUNT(*) as count FROM peers").get() as { count: number };
-        return Response.json({ status: "ok", peers: peers.count });
+        return Response.json({ status: "ok", peers: peers.size });
       }
       return new Response("claude-peers broker", { status: 200 });
     }
 
+    if (req.method !== "POST") {
+      return new Response("method not allowed", { status: 405 });
+    }
+
     try {
+      // POST /register → SSE 스트림 응답
+      if (path === "/register") {
+        const body = await req.json() as RegisterRequest;
+
+        const stream = new ReadableStream({
+          start(controller) {
+            handlers.handleRegister(body, controller);
+          },
+          cancel() {
+            // 클라이언트가 연결 끊으면 peer 제거
+            peers.delete(body.id);
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+          },
+        });
+      }
+
       const body = await req.json();
 
       switch (path) {
-        case "/register":
-          return Response.json(handlers.handleRegister(body as RegisterRequest));
-        case "/heartbeat":
-          handlers.handleHeartbeat(body as HeartbeatRequest);
-          return Response.json({ ok: true });
         case "/set-summary":
           handlers.handleSetSummary(body as SetSummaryRequest);
           return Response.json({ ok: true });
@@ -69,8 +90,6 @@ Bun.serve({
           return Response.json(handlers.handleListPeers(body as ListPeersRequest));
         case "/send-message":
           return Response.json(handlers.handleSendMessage(body as SendMessageRequest));
-        case "/poll-messages":
-          return Response.json(handlers.handlePollMessages(body as PollMessagesRequest));
         case "/unregister":
           handlers.handleUnregister(body as { id: string });
           return Response.json({ ok: true });
@@ -84,4 +103,4 @@ Bun.serve({
   },
 });
 
-console.error(`[claude-peers broker] listening on ${HOST}:${PORT} (db: ${DB_PATH})`);
+console.error(`[claude-peers broker] listening on ${HOST}:${PORT}`);

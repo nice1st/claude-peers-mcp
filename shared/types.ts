@@ -8,17 +8,7 @@ export interface Peer {
   git_root: string | null;
   tty: string | null;
   summary: string;
-  registered_at: string; // ISO timestamp
-  last_seen: string; // ISO timestamp
-}
-
-export interface Message {
-  id: number;
-  from_id: PeerId;
-  to_id: PeerId;
-  text: string;
-  sent_at: string; // ISO timestamp
-  delivered: boolean;
+  registered_at: string;
 }
 
 // --- Broker API types ---
@@ -36,10 +26,6 @@ export interface RegisterResponse {
   id: PeerId;
 }
 
-export interface HeartbeatRequest {
-  id: PeerId;
-}
-
 export interface SetSummaryRequest {
   id: PeerId;
   summary: string;
@@ -47,7 +33,6 @@ export interface SetSummaryRequest {
 
 export interface ListPeersRequest {
   scope: "machine" | "directory" | "repo";
-  // The requesting peer's context (used for filtering)
   cwd: string;
   git_root: string | null;
   exclude_id?: PeerId;
@@ -59,10 +44,18 @@ export interface SendMessageRequest {
   text: string;
 }
 
-export interface PollMessagesRequest {
-  id: PeerId;
+// --- SSE 이벤트 타입 (브로커 → MCP서버) ---
+
+export interface SSERegisteredEvent {
+  type: "registered";
+  id: string;
 }
 
-export interface PollMessagesResponse {
-  messages: Message[];
+export interface SSEMessageEvent {
+  type: "message";
+  from_id: string;
+  text: string;
+  sent_at: string;
 }
+
+export type SSEEvent = SSERegisteredEvent | SSEMessageEvent;

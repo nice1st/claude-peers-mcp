@@ -1,158 +1,144 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
-import { initSchema, createHandlers } from "./broker-handlers.ts";
+import { createHandlers, peers } from "./broker-handlers.ts";
 
-function setup(staleTimeoutMs = 60_000) {
-  const db = new Database(":memory:");
-  initSchema(db);
-  const handlers = createHandlers(db, staleTimeoutMs);
-  return { db, handlers };
+function makeMockController() {
+  const sent: string[] = [];
+  let closed = false;
+  const controller = {
+    enqueue: (chunk: Uint8Array) => sent.push(new TextDecoder().decode(chunk)),
+    close: () => { closed = true; },
+  } as unknown as ReadableStreamDefaultController;
+  return { controller, sent, isClosed: () => closed };
 }
 
-function registerPeer(handlers: ReturnType<typeof createHandlers>, id: string, opts?: { cwd?: string; git_root?: string | null }) {
-  return handlers.handleRegister({
-    id,
-    pid: 1000,
-    cwd: opts?.cwd ?? "/test",
-    git_root: opts?.git_root ?? null,
-    tty: null,
-    summary: "",
-  });
+function setup() {
+  peers.clear();
+  const handlers = createHandlers();
+  return { handlers };
+}
+
+function registerPeer(
+  handlers: ReturnType<typeof createHandlers>,
+  id: string,
+  opts?: { cwd?: string; git_root?: string | null },
+) {
+  const { controller } = makeMockController();
+  return {
+    result: handlers.handleRegister(
+      {
+        id,
+        pid: 1000,
+        cwd: opts?.cwd ?? "/test",
+        git_root: opts?.git_root ?? null,
+        tty: null,
+        summary: "",
+      },
+      controller,
+    ),
+    controller,
+  };
 }
 
 // --- register ---
 
 describe("handleRegister", () => {
+  beforeEach(() => peers.clear());
+
   test("신규 피어 등록", () => {
     const { handlers } = setup();
-    const result = registerPeer(handlers, "planner");
+    const { result } = registerPeer(handlers, "planner");
     expect(result.id).toBe("planner");
+    expect(peers.has("planner")).toBe(true);
   });
 
-  test("같은 alias 재등록 시 기존 교체", () => {
+  test("등록 시 첫 SSE 이벤트 전송", () => {
     const { handlers } = setup();
-    registerPeer(handlers, "planner", { cwd: "/old" });
-    registerPeer(handlers, "planner", { cwd: "/new" });
+    const { controller, sent } = (() => {
+      const m = makeMockController();
+      handlers.handleRegister(
+        { id: "planner", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+        m.controller,
+      );
+      return m;
+    })();
+    expect(sent.length).toBe(1);
+    const event = JSON.parse(sent[0].replace("data: ", "").trim());
+    expect(event.type).toBe("registered");
+    expect(event.id).toBe("planner");
+  });
 
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peers).toHaveLength(1);
-    expect(peers[0].cwd).toBe("/new");
+  test("재등록 시 이전 SSE controller.close() 호출 (좀비 방지)", () => {
+    const { handlers } = setup();
+    const old = makeMockController();
+    handlers.handleRegister(
+      { id: "planner", pid: 1, cwd: "/old", git_root: null, tty: null, summary: "" },
+      old.controller,
+    );
+    expect(old.isClosed()).toBe(false);
+
+    registerPeer(handlers, "planner", { cwd: "/new" });
+    expect(old.isClosed()).toBe(true);
+
+    const peerList = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
+    expect(peerList).toHaveLength(1);
+    expect(peerList[0].cwd).toBe("/new");
   });
 });
 
 // --- sendMessage ---
 
 describe("handleSendMessage", () => {
-  test("존재하는 피어에게 메시지 저장", () => {
+  beforeEach(() => peers.clear());
+
+  test("존재하는 피어에게 메시지 → SSE 이벤트 enqueue", () => {
     const { handlers } = setup();
+    const { controller: receiverCtrl, sent } = makeMockController();
+    handlers.handleRegister(
+      { id: "receiver", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      receiverCtrl,
+    );
     registerPeer(handlers, "sender");
-    registerPeer(handlers, "receiver");
 
     const result = handlers.handleSendMessage({ from_id: "sender", to_id: "receiver", text: "hello" });
     expect(result.ok).toBe(true);
+
+    // sent[0] = registered 이벤트, sent[1] = message 이벤트
+    expect(sent.length).toBe(2);
+    const event = JSON.parse(sent[1].replace("data: ", "").trim());
+    expect(event.type).toBe("message");
+    expect(event.from_id).toBe("sender");
+    expect(event.text).toBe("hello");
   });
 
   test("없는 피어에게 에러 반환", () => {
     const { handlers } = setup();
     registerPeer(handlers, "sender");
-
     const result = handlers.handleSendMessage({ from_id: "sender", to_id: "ghost", text: "hello" });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("ghost");
   });
 });
 
-// --- pollMessages ---
-
-describe("handlePollMessages", () => {
-  test("미배달 메시지 반환 후 delivered 마킹", () => {
-    const { handlers } = setup();
-    registerPeer(handlers, "a");
-    registerPeer(handlers, "b");
-    handlers.handleSendMessage({ from_id: "a", to_id: "b", text: "msg1" });
-    handlers.handleSendMessage({ from_id: "a", to_id: "b", text: "msg2" });
-
-    const result = handlers.handlePollMessages({ id: "b" });
-    expect(result.messages).toHaveLength(2);
-    expect(result.messages[0].text).toBe("msg1");
-    expect(result.messages[1].text).toBe("msg2");
-
-    // 두 번째 poll은 빈 배열
-    const result2 = handlers.handlePollMessages({ id: "b" });
-    expect(result2.messages).toHaveLength(0);
-  });
-
-  test("메시지 없으면 빈 배열", () => {
-    const { handlers } = setup();
-    registerPeer(handlers, "lonely");
-
-    const result = handlers.handlePollMessages({ id: "lonely" });
-    expect(result.messages).toHaveLength(0);
-  });
-});
-
-// --- cleanStalePeers ---
-
-describe("cleanStalePeers", () => {
-  test("타임아웃 초과 피어 삭제", () => {
-    const { db, handlers } = setup(1000); // 1초 타임아웃
-    registerPeer(handlers, "stale");
-
-    // last_seen을 과거로 강제 설정
-    db.run("UPDATE peers SET last_seen = ? WHERE id = ?", [new Date(Date.now() - 2000).toISOString(), "stale"]);
-
-    handlers.cleanStalePeers();
-
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peers).toHaveLength(0);
-  });
-
-  test("타임아웃 이내 피어 유지", () => {
-    const { handlers } = setup(60_000);
-    registerPeer(handlers, "fresh");
-
-    handlers.cleanStalePeers();
-
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peers).toHaveLength(1);
-  });
-
-  test("stale 피어의 미배달 메시지도 삭제", () => {
-    const { db, handlers } = setup(1000);
-    registerPeer(handlers, "sender");
-    registerPeer(handlers, "stale");
-    handlers.handleSendMessage({ from_id: "sender", to_id: "stale", text: "will be deleted" });
-
-    db.run("UPDATE peers SET last_seen = ? WHERE id = ?", [new Date(Date.now() - 2000).toISOString(), "stale"]);
-
-    handlers.cleanStalePeers();
-
-    // stale 피어의 미배달 메시지 확인
-    const msgs = db.query("SELECT * FROM messages WHERE to_id = 'stale' AND delivered = 0").all();
-    expect(msgs).toHaveLength(0);
-  });
-});
-
 // --- listPeers ---
 
 describe("handleListPeers", () => {
+  beforeEach(() => peers.clear());
+
   test("scope=machine 전체 반환", () => {
     const { handlers } = setup();
     registerPeer(handlers, "a", { cwd: "/project-a" });
     registerPeer(handlers, "b", { cwd: "/project-b" });
-
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peers).toHaveLength(2);
+    const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
+    expect(list).toHaveLength(2);
   });
 
   test("scope=directory 같은 cwd만", () => {
     const { handlers } = setup();
     registerPeer(handlers, "a", { cwd: "/project-a" });
     registerPeer(handlers, "b", { cwd: "/project-b" });
-
-    const peers = handlers.handleListPeers({ scope: "directory", cwd: "/project-a", git_root: null });
-    expect(peers).toHaveLength(1);
-    expect(peers[0].id).toBe("a");
+    const list = handlers.handleListPeers({ scope: "directory", cwd: "/project-a", git_root: null });
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe("a");
   });
 
   test("scope=repo 같은 git_root만", () => {
@@ -160,71 +146,64 @@ describe("handleListPeers", () => {
     registerPeer(handlers, "a", { cwd: "/repo/sub-a", git_root: "/repo" });
     registerPeer(handlers, "b", { cwd: "/repo/sub-b", git_root: "/repo" });
     registerPeer(handlers, "c", { cwd: "/other", git_root: "/other" });
-
-    const peers = handlers.handleListPeers({ scope: "repo", cwd: "/repo/sub-a", git_root: "/repo" });
-    expect(peers).toHaveLength(2);
+    const list = handlers.handleListPeers({ scope: "repo", cwd: "/repo/sub-a", git_root: "/repo" });
+    expect(list).toHaveLength(2);
   });
 
   test("scope=repo git_root 없으면 cwd 폴백", () => {
     const { handlers } = setup();
     registerPeer(handlers, "a", { cwd: "/no-git", git_root: null });
     registerPeer(handlers, "b", { cwd: "/no-git", git_root: null });
-
-    const peers = handlers.handleListPeers({ scope: "repo", cwd: "/no-git", git_root: null });
-    expect(peers).toHaveLength(2);
+    const list = handlers.handleListPeers({ scope: "repo", cwd: "/no-git", git_root: null });
+    expect(list).toHaveLength(2);
   });
 
   test("exclude_id로 자기 자신 제외", () => {
     const { handlers } = setup();
     registerPeer(handlers, "me");
     registerPeer(handlers, "other");
-
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null, exclude_id: "me" });
-    expect(peers).toHaveLength(1);
-    expect(peers[0].id).toBe("other");
-  });
-
-  test("stale 피어 제외", () => {
-    const { db, handlers } = setup(1000);
-    registerPeer(handlers, "fresh");
-    registerPeer(handlers, "stale");
-
-    db.run("UPDATE peers SET last_seen = ? WHERE id = ?", [new Date(Date.now() - 2000).toISOString(), "stale"]);
-
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peers).toHaveLength(1);
-    expect(peers[0].id).toBe("fresh");
-  });
-});
-
-// --- heartbeat ---
-
-describe("handleHeartbeat", () => {
-  test("last_seen 갱신", () => {
-    const { db, handlers } = setup();
-    registerPeer(handlers, "peer");
-
-    const before = (db.query("SELECT last_seen FROM peers WHERE id = 'peer'").get() as { last_seen: string }).last_seen;
-
-    // 약간의 시간차
-    handlers.handleHeartbeat({ id: "peer" });
-
-    const after = (db.query("SELECT last_seen FROM peers WHERE id = 'peer'").get() as { last_seen: string }).last_seen;
-    expect(after >= before).toBe(true);
+    const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null, exclude_id: "me" });
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe("other");
   });
 });
 
 // --- unregister ---
 
 describe("handleUnregister", () => {
-  test("피어 삭제", () => {
+  beforeEach(() => peers.clear());
+
+  test("피어 map에서 삭제 + controller.close() 호출", () => {
     const { handlers } = setup();
-    registerPeer(handlers, "peer");
+    const mock = makeMockController();
+    handlers.handleRegister(
+      { id: "peer", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      mock.controller,
+    );
+    expect(peers.has("peer")).toBe(true);
 
     handlers.handleUnregister({ id: "peer" });
+    expect(peers.has("peer")).toBe(false);
+    expect(mock.isClosed()).toBe(true);
+  });
 
-    const peers = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peers).toHaveLength(0);
+  test("등록 안 된 피어 unregister → 에러 없음", () => {
+    const { handlers } = setup();
+    expect(() => handlers.handleUnregister({ id: "ghost" })).not.toThrow();
+  });
+});
+
+// --- setSummary ---
+
+describe("handleSetSummary", () => {
+  beforeEach(() => peers.clear());
+
+  test("summary 업데이트", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "peer");
+    handlers.handleSetSummary({ id: "peer", summary: "리뷰 중" });
+    const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
+    expect(list[0].summary).toBe("리뷰 중");
   });
 });
 
