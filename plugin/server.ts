@@ -276,12 +276,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         };
       }
 
-      if (myId) {
-        return {
-          content: [{ type: "text" as const, text: `Already registered as peer ${myId}` }],
-        };
-      }
-
       if (!(await isBrokerAlive())) {
         return {
           content: [{
