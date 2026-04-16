@@ -369,7 +369,6 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           scope,
           cwd: myCwd,
           git_root: myGitRoot,
-          exclude_id: myId,
         });
 
         if (peers.length === 0) {

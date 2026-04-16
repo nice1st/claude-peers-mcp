@@ -37,6 +37,7 @@ setInterval(() => {
 Bun.serve({
   port: PORT,
   hostname: HOST,
+  idleTimeout: 0,
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
