@@ -21,6 +21,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type {
   PeerId,
+  Peer,
   RegisterRequest,
   SSEEvent,
 } from "./shared/types.ts";
@@ -234,7 +235,6 @@ async function startSSELoop(reader: ReadableStreamDefaultReader<Uint8Array>) {
         }
 
         if (json.type === "message") {
-          // 발신자 메타는 브로커가 SSE 이벤트에 포함 — 별도 조회 불필요
           await mcp.notification({
             method: "notifications/claude/channel",
             params: {
@@ -411,15 +411,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
 
     case "send_message": {
-      log(`send_message args: ${JSON.stringify(args)}`);
-      const rawArgs = args as Record<string, string>;
-      const to_id = rawArgs.to_id ?? rawArgs.to ?? rawArgs.peer_id ?? rawArgs.id;
-      const message = rawArgs.message ?? rawArgs.text ?? rawArgs.msg;
+      const { to_id, message } = args as { to_id?: string; message?: string };
       if (!to_id || !message) {
         return {
           content: [{
             type: "text" as const,
-            text: `Invalid arguments. Expected to_id and message. Received: ${JSON.stringify(args)}`,
+            text: "to_id and message are required.",
           }],
           isError: true,
         };
