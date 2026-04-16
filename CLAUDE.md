@@ -13,7 +13,8 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 레포 루트는 브로커 + 마켓플레이스, `plugin/`은 사용자에게 배포되는 플러그인.
 
 ### 레포 루트 (브로커/운영)
-- `broker.ts` — HTTP daemon (0.0.0.0:7899) + SQLite. heartbeat 타임아웃으로 stale peer 정리.
+- `broker.ts` — HTTP daemon (0.0.0.0:7899). 피어를 메모리 Map으로 관리, SSE로 메시지 push.
+- `broker-handlers.ts` — broker 핸들러 로직 (테스트 분리용).
 - `cli.ts` — broker 상태 조회 CLI. `CLAUDE_PEERS_BROKER_URL` 지원.
 - `shared/types.ts` — broker API DTO.
 - `.claude-plugin/marketplace.json` — 마켓플레이스 매니페스트 (`source: "./plugin"`).
@@ -43,12 +44,11 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 
 | Tool | Description |
 |------|-------------|
-| `register` | Register with broker + start polling/heartbeat (CALL FIRST) |
-| `unregister` | Unregister + stop polling/heartbeat |
+| `register` | Register with broker + open SSE connection (CALL FIRST) |
+| `unregister` | Unregister + close SSE connection |
 | `list_peers` | Discover other Claude Code instances |
 | `send_message` | Send message to another instance by ID |
 | `set_summary` | Set work summary (visible to peers) |
-| `check_messages` | Manual message check (fallback) |
 
 ## Running
 
@@ -67,8 +67,6 @@ CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 | `CLAUDE_PEERS_BROKER_URL` | — | Remote broker URL (overrides port) |
 | `CLAUDE_PEERS_PORT` | `7899` | Broker port |
 | `CLAUDE_PEERS_HOST` | `0.0.0.0` | Broker bind address |
-| `CLAUDE_PEERS_DB` | `~/.claude-peers.db` | SQLite database path |
-| `CLAUDE_PEERS_STALE_TIMEOUT` | `60000` | Peer staleness timeout (ms) |
 
 ## Bun
 
