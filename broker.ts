@@ -8,7 +8,7 @@
  * Run directly: bun broker.ts
  */
 
-import { createHandlers, peers } from "./broker-handlers.ts";
+import { createHandlers, peers, encoder } from "./broker-handlers.ts";
 import type {
   RegisterRequest,
   SetSummaryRequest,
@@ -20,8 +20,6 @@ const PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const HOST = process.env.CLAUDE_PEERS_HOST ?? "0.0.0.0";
 
 const handlers = createHandlers();
-
-const encoder = new TextEncoder();
 
 // 30초마다 모든 SSE 연결에 keepalive 전송. write 실패 시 peer 제거.
 setInterval(() => {
@@ -60,13 +58,18 @@ Bun.serve({
       if (path === "/register") {
         const body = await req.json() as RegisterRequest;
 
+        let streamController: ReadableStreamDefaultController;
         const stream = new ReadableStream({
           start(controller) {
+            streamController = controller;
             handlers.handleRegister(body, controller);
           },
           cancel() {
-            // 클라이언트가 연결 끊으면 peer 제거
-            peers.delete(body.id);
+            // 재등록으로 이미 교체된 경우 삭제하지 않음
+            const current = peers.get(body.id);
+            if (current?.controller === streamController) {
+              peers.delete(body.id);
+            }
           },
         });
 

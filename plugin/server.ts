@@ -235,32 +235,15 @@ async function startSSELoop(reader: ReadableStreamDefaultReader<Uint8Array>) {
         }
 
         if (json.type === "message") {
-          // 발신자 정보 조회 (선택적)
-          let fromSummary = "";
-          let fromCwd = "";
-          try {
-            const peerList = await brokerFetch<Peer[]>("/list-peers", {
-              scope: "machine",
-              cwd: myCwd,
-              git_root: myGitRoot,
-            });
-            const sender = peerList.find((p) => p.id === json.from_id);
-            if (sender) {
-              fromSummary = sender.summary;
-              fromCwd = sender.cwd;
-            }
-          } catch {
-            // Non-critical
-          }
-
+          // 발신자 메타는 브로커가 SSE 이벤트에 포함 — 별도 조회 불필요
           await mcp.notification({
             method: "notifications/claude/channel",
             params: {
               content: json.text,
               meta: {
                 from_id: json.from_id,
-                from_summary: fromSummary,
-                from_cwd: fromCwd,
+                from_summary: json.from_summary,
+                from_cwd: json.from_cwd,
                 sent_at: json.sent_at,
               },
             },
