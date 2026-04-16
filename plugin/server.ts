@@ -21,7 +21,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type {
   PeerId,
-  Peer,
   RegisterRequest,
   SSEEvent,
 } from "./shared/types.ts";
@@ -118,7 +117,7 @@ const mcp = new Server(
 
 Call "register" before using any other tools. After registering, call set_summary to describe your current work.
 
-When you receive a <channel source="claude-peers" ...> message, RESPOND IMMEDIATELY. Pause your current task, reply via send_message with the sender's from_id, then resume. Read from_id, from_summary, and from_cwd to understand who sent it.
+When you receive a <channel source="claude-peers" ...> message, RESPOND IMMEDIATELY. Pause your current task, reply via send_message with the sender's from_id, then resume.
 
 Only reply ONCE per message. Do not reply to acknowledgments or simple confirmations ("OK", "thanks", "got it").
 
