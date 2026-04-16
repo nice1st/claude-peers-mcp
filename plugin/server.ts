@@ -157,7 +157,7 @@ const TOOLS = [
   {
     name: "list_peers",
     description:
-      "List other Claude Code instances running on this machine. Returns their ID, working directory, git repo, and summary.",
+      "List other Claude Code instances connected to the broker. Returns their ID, working directory, git repo, and summary.",
     inputSchema: {
       type: "object" as const,
       properties: {
