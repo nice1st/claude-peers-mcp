@@ -108,7 +108,7 @@ let sseReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 // --- MCP Server ---
 
 const mcp = new Server(
-  { name: "claude-peers", version: "1.0.0" },
+  { name: "claude-peers", version: "1.0.2" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
@@ -208,9 +208,20 @@ const TOOLS = [
 
 // --- SSE 수신 루프 ---
 
+async function notifySystem(content: string) {
+  await mcp.notification({
+    method: "notifications/claude/channel",
+    params: {
+      content,
+      meta: { source: "claude-peers-system", sent_at: new Date().toISOString() },
+    },
+  });
+}
+
 async function startSSELoop(reader: ReadableStreamDefaultReader<Uint8Array>) {
   const decoder = new TextDecoder();
   let buf = "";
+  let errorReason: string | null = null;
 
   try {
     while (true) {
@@ -251,9 +262,17 @@ async function startSSELoop(reader: ReadableStreamDefaultReader<Uint8Array>) {
       }
     }
   } catch (e) {
-    if (myId) {
-      log(`SSE loop ended: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    errorReason = e instanceof Error ? e.message : String(e);
+  }
+
+  // 루프 종료: myId가 있는데 끊긴 경우 = 비정상 (브로커 다운, 네트워크 끊김 등)
+  if (myId) {
+    log(`SSE loop ended: ${errorReason ?? "stream closed"}`);
+    try {
+      await notifySystem(
+        `[claude-peers-system] 브로커와의 SSE 연결이 끊겼습니다 (peer=${myId}, reason=${errorReason ?? "stream closed"}). 메시지 수신 불가. 사용자에게 이 사실을 알리고 지시를 기다리세요. 자동으로 재등록하지 마세요.`,
+      );
+    } catch { /* ignore */ }
   }
 }
 

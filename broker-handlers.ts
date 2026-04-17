@@ -18,6 +18,10 @@ function encode(s: string): Uint8Array {
   return encoder.encode(s);
 }
 
+export function logPeerRemoved(id: string, reason: string): void {
+  console.error(`[claude-peers broker] peer removed: id=${id} reason=${reason}`);
+}
+
 interface PeerEntry {
   id: string;
   pid: number;
@@ -45,6 +49,7 @@ export function createHandlers() {
     if (existing) {
       try { existing.controller.close(); } catch { /* already closed */ }
       peers.delete(id);
+      logPeerRemoved(id, "re-registered");
     }
 
     const entry: PeerEntry = {
@@ -116,6 +121,7 @@ export function createHandlers() {
       entry.controller.enqueue(encode(`data: ${JSON.stringify(event)}\n\n`));
     } catch {
       peers.delete(body.to_id);
+      logPeerRemoved(body.to_id, "send-failed");
       return { ok: false, error: `Peer ${body.to_id} SSE connection closed` };
     }
 
@@ -127,6 +133,7 @@ export function createHandlers() {
     if (entry) {
       try { entry.controller.close(); } catch { /* already closed */ }
       peers.delete(body.id);
+      logPeerRemoved(body.id, "unregistered");
     }
   }
 

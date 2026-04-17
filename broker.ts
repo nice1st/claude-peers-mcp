@@ -8,7 +8,7 @@
  * Run directly: bun broker.ts
  */
 
-import { createHandlers, peers, encoder } from "./broker-handlers.ts";
+import { createHandlers, peers, encoder, logPeerRemoved } from "./broker-handlers.ts";
 import type {
   RegisterRequest,
   SetSummaryRequest,
@@ -28,6 +28,7 @@ setInterval(() => {
       entry.controller.enqueue(encoder.encode(": keepalive\n\n"));
     } catch {
       peers.delete(id);
+      logPeerRemoved(id, "keepalive-failed");
     }
   }
 }, 30_000);
@@ -70,6 +71,7 @@ Bun.serve({
             const current = peers.get(body.id);
             if (current?.controller === streamController) {
               peers.delete(body.id);
+              logPeerRemoved(body.id, "sse-cancelled");
             }
           },
         });
