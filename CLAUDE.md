@@ -23,7 +23,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 - `plugin/server.ts` — MCP stdio server. broker에 HTTP로 통신.
 - `plugin/shared/types.ts` — broker API DTO (복사본).
 - `plugin/.claude-plugin/plugin.json` — 플러그인 매니페스트 + mcpServers 정의.
-- `plugin/skills/` — `/register`, `/peers`, `/send` 슬래시 커맨드.
+- `plugin/skills/` — `/register`, `/peers` 슬래시 커맨드. 메시지 전송은 MCP `send_message` 도구 직접 호출.
 
 ## Workflow
 
@@ -36,7 +36,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
    claude --plugin-dir ~/claude-peers-mcp/plugin
      --dangerously-load-development-channels server:plugin:claude-peers:claude-peers
 5. 등록:                 /register <alias>
-6. 메시지 송수신:        /send <peer-id> <message>
+6. 메시지 송수신:        send_message 도구 직접 호출 (to_id, message, [skill])
 7. 종료:                 unregister
 ```
 
@@ -90,3 +90,19 @@ Default to using Bun instead of Node.js.
 ## Testing
 
 Use `bun test` to run tests.
+
+## 버전 관리 (커밋 전 필수)
+
+코드 변경을 커밋하기 전, 아래 5곳 버전을 **반드시 확인하고 동기화**한다. 하나라도 누락되면 플러그인 업데이트가 인식되지 않는다.
+
+- `package.json`
+- `plugin/package.json`
+- `plugin/.claude-plugin/plugin.json`
+- `.claude-plugin/marketplace.json`
+- `plugin/server.ts` (`new Server({ name, version })`)
+
+기능 추가/수정 = minor or patch bump. 확인 명령:
+
+```bash
+grep -E '"version"|version:' package.json plugin/package.json plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json plugin/server.ts
+```
