@@ -110,12 +110,13 @@ export function createHandlers() {
       return { ok: false, error: `Peer ${body.to_id} not found` };
     }
 
-    const event = {
+    const event: Record<string, unknown> = {
       type: "message",
       from_id: body.from_id,
       text: body.text,
       sent_at: new Date().toISOString(),
     };
+    if (body.skill) event.skill = body.skill;
 
     try {
       entry.controller.enqueue(encode(`data: ${JSON.stringify(event)}\n\n`));

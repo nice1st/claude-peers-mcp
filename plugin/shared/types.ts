@@ -42,6 +42,7 @@ export interface SendMessageRequest {
   from_id: PeerId;
   to_id: PeerId;
   text: string;
+  skill?: string;
 }
 
 // --- SSE 이벤트 타입 (브로커 → MCP서버) ---
@@ -56,6 +57,7 @@ export interface SSEMessageEvent {
   from_id: string;
   text: string;
   sent_at: string;
+  skill?: string;
 }
 
 export type SSEEvent = SSERegisteredEvent | SSEMessageEvent;

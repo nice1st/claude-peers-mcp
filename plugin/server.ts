@@ -108,21 +108,21 @@ let sseReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 // --- MCP Server ---
 
 const mcp = new Server(
-  { name: "claude-peers", version: "1.0.2" },
+  { name: "claude-peers", version: "1.0.3" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
       tools: {},
     },
-    instructions: `You are connected to the claude-peers network. Other Claude Code instances can discover you and send messages.
+    instructions: `You are connected to the claude-peers network. Other Claude Code instances can discover and message you.
 
-Call "register" before using any other tools. After registering, call set_summary to describe your current work.
+Inbound messages arrive as:
+<channel source="claude-peers" from_id="SENDER_ID" sent_at="..." [skill="SKILL_NAME"]>
+MESSAGE CONTENT
+</channel>
 
-When you receive a <channel source="claude-peers" ...> message, RESPOND IMMEDIATELY. Pause your current task, reply via send_message with the sender's from_id, then resume.
-
-Only reply ONCE per message. Do not reply to acknowledgments or simple confirmations ("OK", "thanks", "got it").
-
-When done working, call unregister to disconnect.`,
+When the tag has a skill attribute, you MUST invoke that skill immediately via the Skill tool. This is non-negotiable — do not answer from memory, do not skip, do not defer.
+Skip replies to bare acknowledgments ("OK", "thanks", "got it").`,
   }
 );
 
@@ -173,7 +173,7 @@ const TOOLS = [
   {
     name: "send_message",
     description:
-      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via SSE channel notification.",
+      "Send a message to another Claude Code instance by peer ID. The message is pushed into their session immediately via SSE channel notification. Pass `skill` to force the recipient to execute that skill with the message as input (e.g. skill='review' makes them run /review). Omit skill for free-form messages.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -184,6 +184,10 @@ const TOOLS = [
         message: {
           type: "string" as const,
           description: "The message to send",
+        },
+        skill: {
+          type: "string" as const,
+          description: "Optional. Name of a skill the recipient must execute (e.g. 'review', 'plan'). The recipient is instructed to run this skill with the message as args instead of replying freely.",
         },
       },
       required: ["to_id", "message"],
@@ -246,18 +250,18 @@ async function startSSELoop(reader: ReadableStreamDefaultReader<Uint8Array>) {
         }
 
         if (json.type === "message") {
+          const meta: Record<string, string> = {
+            from_id: json.from_id,
+            sent_at: json.sent_at,
+          };
+          if (json.skill) meta.skill = json.skill;
+
           await mcp.notification({
             method: "notifications/claude/channel",
-            params: {
-              content: json.text,
-              meta: {
-                from_id: json.from_id,
-                sent_at: json.sent_at,
-              },
-            },
+            params: { content: json.text, meta },
           });
 
-          log(`Pushed message from ${json.from_id}: ${json.text.slice(0, 80)}`);
+          log(`Pushed message from ${json.from_id}${json.skill ? ` [skill=${json.skill}]` : ""}: ${json.text.slice(0, 80)}`);
         }
       }
     }
@@ -430,7 +434,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
 
     case "send_message": {
-      const { to_id, message } = args as { to_id?: string; message?: string };
+      const { to_id, message, skill } = args as { to_id?: string; message?: string; skill?: string };
       if (!to_id || !message) {
         return {
           content: [{
@@ -451,6 +455,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           from_id: myId,
           to_id,
           text: message,
+          ...(skill ? { skill } : {}),
         });
         if (!result.ok) {
           return {

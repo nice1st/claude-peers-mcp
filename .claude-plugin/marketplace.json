@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Real-time peer messaging between Claude Code instances across machines via channel protocol",
-    "version": "1.0.2"
+    "version": "1.0.3"
   },
   "plugins": [
     {
