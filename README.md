@@ -1,6 +1,18 @@
 # claude-peers
 
-> Forked from [louislva/claude-peers-mcp](https://github.com/louislva/claude-peers-mcp) — 원본은 비활성 상태이며, 이 포크는 활발히 유지보수 중
+**Cross-machine, push-based messaging between Claude Code instances** — peers on different machines connect to a shared broker and receive messages instantly via SSE (no polling).
+
+> Active fork of [louislva/claude-peers-mcp](https://github.com/louislva/claude-peers-mcp). The original is maintained but does not merge external PRs; this fork carries community improvements.
+
+## What this fork adds
+
+- **Remote broker + SSE push** — peers connect across machines (0.0.0.0 binding) and receive messages instantly. No polling, no heartbeats, no SQLite
+- **Multi-group isolation** — peers can join N groups simultaneously. Both `list_peers` and `send_message` are filtered by shared group; non-shared peers respond with `Peer not found` (no membership leakage)
+- **Skill enforcement** — pass `skill` to `send_message` to make the recipient execute that skill (e.g. `skill="review"` runs `/review`)
+- **Plugin distribution** — installable via marketplace or `--plugin-dir`
+- **Built-in slash commands** — `/register`, `/peers`, `/groups`
+
+---
 
 여러 머신의 Claude Code 인스턴스가 서로를 발견하고 메시지를 주고받을 수 있는 MCP 채널 플러그인.
 
