@@ -108,7 +108,7 @@ let sseReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 // --- MCP Server ---
 
 const mcp = new Server(
-  { name: "claude-peers", version: "1.0.3" },
+  { name: "claude-peers", version: "1.1.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
@@ -156,24 +156,41 @@ const TOOLS = [
   {
     name: "list_peers",
     description:
-      "List other Claude Code instances connected to the broker. Returns their ID, working directory, git repo, and summary.",
+      "List other Claude Code instances that share at least one group with you. Returns their ID, working directory, git repo, summary, and the groups you share with them (matched_groups).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "list_groups",
+    description:
+      "List all active groups on the broker with peer counts. Use to discover which groups exist so you can join them via set_groups.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "set_groups",
+    description:
+      "Replace your group memberships. Pass an array of group names — your previous groups are cleared and replaced. Group names are normalized to lowercase and trimmed. Default group on register is 'lobby'; call this to move to other groups.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        scope: {
-          type: "string" as const,
-          enum: ["machine", "directory", "repo"],
-          description:
-            'Scope of peer discovery. "machine" = all instances. "directory" = same working directory. "repo" = same git repository.',
+        groups: {
+          type: "array" as const,
+          items: { type: "string" as const },
+          description: "Array of group names to belong to. Pass ['lobby'] to return to lobby.",
         },
       },
-      required: ["scope"],
+      required: ["groups"],
     },
   },
   {
     name: "send_message",
     description:
-      "Send a message to another Claude Code instance by peer ID. The message is pushed into their session immediately via SSE channel notification. Pass `skill` to force the recipient to execute that skill with the message as input (e.g. skill='review' makes them run /review). Omit skill for free-form messages.",
+      "Send a message to another Claude Code instance by peer ID. The recipient must share at least one group with you — otherwise the broker returns 'Peer X not found' (same response as a non-existent peer, to avoid leaking group membership). Pass `skill` to force the recipient to execute that skill (e.g. skill='review' makes them run /review). Omit skill for free-form messages.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -291,7 +308,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   switch (name) {
     case "register": {
-      const { alias } = args as { alias?: string };
+      const rawAlias = (args as { alias?: string }).alias;
+      const alias = rawAlias?.trim().toLowerCase();
       if (!alias) {
         return {
           content: [{ type: "text" as const, text: "alias is required. Usage: register(alias: 'planner')" }],
@@ -343,7 +361,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         return {
           content: [{
             type: "text" as const,
-            text: `Registered as peer "${myId}". Receiving messages via SSE. Call set_summary to describe your current work.`,
+            text: `Registered as peer "${myId}" in group [lobby]. Receiving messages via SSE. Call set_summary to describe your current work, and set_groups to move to other groups.`,
           }],
         };
       } catch (e) {
@@ -386,19 +404,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
 
     case "list_peers": {
-      const scope = (args as { scope: string }).scope as "machine" | "directory" | "repo";
+      if (!myId) {
+        return {
+          content: [{ type: "text" as const, text: "Not registered. Call register first." }],
+          isError: true,
+        };
+      }
       try {
-        const peers = await brokerFetch<Peer[]>("/list-peers", {
-          scope,
-          cwd: myCwd,
-          git_root: myGitRoot,
-        });
+        const peers = await brokerFetch<Peer[]>("/list-peers", { id: myId });
 
         if (peers.length === 0) {
           return {
             content: [{
               type: "text" as const,
-              text: `No other Claude Code instances found (scope: ${scope}).`,
+              text: "No other Claude Code instances share a group with you.",
             }],
           };
         }
@@ -412,6 +431,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           if (p.git_root) parts.push(`Repo: ${p.git_root}`);
           if (p.tty) parts.push(`TTY: ${p.tty}`);
           if (p.summary) parts.push(`Summary: ${p.summary}`);
+          if (p.matched_groups?.length) parts.push(`Matched groups: ${p.matched_groups.join(", ")}`);
           parts.push(`Registered: ${p.registered_at}`);
           return parts.join("\n  ");
         });
@@ -419,7 +439,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         return {
           content: [{
             type: "text" as const,
-            text: `Found ${peers.length} peer(s) (scope: ${scope}):\n\n${lines.join("\n\n")}`,
+            text: `Found ${peers.length} peer(s):\n\n${lines.join("\n\n")}`,
           }],
         };
       } catch (e) {
@@ -427,6 +447,75 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           content: [{
             type: "text" as const,
             text: `Error listing peers: ${e instanceof Error ? e.message : String(e)}`,
+          }],
+          isError: true,
+        };
+      }
+    }
+
+    case "list_groups": {
+      try {
+        const groups = await brokerFetch<{ name: string; peer_count: number }[]>(
+          "/list-groups",
+          {},
+        );
+        if (groups.length === 0) {
+          return { content: [{ type: "text" as const, text: "No active groups." }] };
+        }
+        const lines = groups.map((g) => `${g.name} (${g.peer_count} peer${g.peer_count === 1 ? "" : "s"})`);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Active groups:\n${lines.join("\n")}`,
+          }],
+        };
+      } catch (e) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Error listing groups: ${e instanceof Error ? e.message : String(e)}`,
+          }],
+          isError: true,
+        };
+      }
+    }
+
+    case "set_groups": {
+      const { groups } = args as { groups?: string[] };
+      if (!myId) {
+        return {
+          content: [{ type: "text" as const, text: "Not registered. Call register first." }],
+          isError: true,
+        };
+      }
+      if (!Array.isArray(groups) || groups.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "groups must be a non-empty array of strings." }],
+          isError: true,
+        };
+      }
+      try {
+        const result = await brokerFetch<{ ok: boolean; groups?: string[]; error?: string }>(
+          "/set-groups",
+          { id: myId, groups },
+        );
+        if (!result.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Failed to set groups: ${result.error}` }],
+            isError: true,
+          };
+        }
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Groups updated: [${(result.groups ?? []).join(", ")}]`,
+          }],
+        };
+      } catch (e) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Error setting groups: ${e instanceof Error ? e.message : String(e)}`,
           }],
           isError: true,
         };

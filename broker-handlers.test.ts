@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { createHandlers, peers } from "./broker-handlers.ts";
+import { createHandlers, peers, normalize, DEFAULT_GROUP } from "./broker-handlers.ts";
 
 function makeMockController() {
   const sent: string[] = [];
@@ -39,83 +39,120 @@ function registerPeer(
   };
 }
 
+// --- normalize ---
+
+describe("normalize", () => {
+  test("trim + lowercase", () => {
+    expect(normalize("  BE  ")).toBe("be");
+    expect(normalize("Hello")).toBe("hello");
+    expect(normalize("be")).toBe("be");
+  });
+});
+
 // --- register ---
 
 describe("handleRegister", () => {
   beforeEach(() => peers.clear());
 
-  test("신규 피어 등록", () => {
+  test("신규 피어 등록 + lobby 자동 가입", () => {
     const { handlers } = setup();
     const { result } = registerPeer(handlers, "planner");
+    expect(result.id).toBe("planner");
+    expect(peers.get("planner")?.groups).toEqual([DEFAULT_GROUP]);
+  });
+
+  test("alias 정규화 (대소문자/공백)", () => {
+    const { handlers } = setup();
+    const { result } = registerPeer(handlers, "  Planner  ");
     expect(result.id).toBe("planner");
     expect(peers.has("planner")).toBe(true);
   });
 
   test("등록 시 첫 SSE 이벤트 전송", () => {
     const { handlers } = setup();
-    const { controller, sent } = (() => {
-      const m = makeMockController();
-      handlers.handleRegister(
-        { id: "planner", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
-        m.controller,
-      );
-      return m;
-    })();
-    expect(sent.length).toBe(1);
-    const event = JSON.parse(sent[0]!.replace("data: ", "").trim());
+    const m = makeMockController();
+    handlers.handleRegister(
+      { id: "planner", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      m.controller,
+    );
+    expect(m.sent.length).toBe(1);
+    const event = JSON.parse(m.sent[0]!.replace("data: ", "").trim());
     expect(event.type).toBe("registered");
     expect(event.id).toBe("planner");
   });
 
-  test("재등록 시 이전 SSE controller.close() 호출 (좀비 방지)", () => {
+  test("재등록 시 lobby로 초기화 (멤버십 보존 없음)", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "planner");
+    handlers.handleSetGroups({ id: "planner", groups: ["be", "fe"] });
+    expect(peers.get("planner")?.groups).toEqual(["be", "fe"]);
+
+    registerPeer(handlers, "planner");
+    expect(peers.get("planner")?.groups).toEqual([DEFAULT_GROUP]);
+  });
+
+  test("재등록 시 이전 SSE controller.close() 호출", () => {
     const { handlers } = setup();
     const old = makeMockController();
     handlers.handleRegister(
       { id: "planner", pid: 1, cwd: "/old", git_root: null, tty: null, summary: "" },
       old.controller,
     );
-    expect(old.isClosed()).toBe(false);
-
     registerPeer(handlers, "planner", { cwd: "/new" });
     expect(old.isClosed()).toBe(true);
+  });
 
-    const peerList = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(peerList).toHaveLength(1);
-    expect(peerList[0]!.cwd).toBe("/new");
+  test("빈 alias 거부", () => {
+    const { handlers } = setup();
+    const m = makeMockController();
+    expect(() =>
+      handlers.handleRegister(
+        { id: "  ", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+        m.controller,
+      ),
+    ).toThrow();
   });
 });
 
-// --- sendMessage ---
+// --- setGroups ---
 
-describe("handleSendMessage", () => {
+describe("handleSetGroups", () => {
   beforeEach(() => peers.clear());
 
-  test("존재하는 피어에게 메시지 → SSE 이벤트 enqueue", () => {
+  test("그룹 교체", () => {
     const { handlers } = setup();
-    const { controller: receiverCtrl, sent } = makeMockController();
-    handlers.handleRegister(
-      { id: "receiver", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
-      receiverCtrl,
-    );
-    registerPeer(handlers, "sender");
-
-    const result = handlers.handleSendMessage({ from_id: "sender", to_id: "receiver", text: "hello" });
+    registerPeer(handlers, "p");
+    const result = handlers.handleSetGroups({ id: "p", groups: ["be", "fe"] });
     expect(result.ok).toBe(true);
-
-    // sent[0] = registered 이벤트, sent[1] = message 이벤트
-    expect(sent.length).toBe(2);
-    const event = JSON.parse(sent[1]!.replace("data: ", "").trim());
-    expect(event.type).toBe("message");
-    expect(event.from_id).toBe("sender");
-    expect(event.text).toBe("hello");
+    expect(result.groups).toEqual(["be", "fe"]);
+    expect(peers.get("p")?.groups).toEqual(["be", "fe"]);
   });
 
-  test("없는 피어에게 에러 반환", () => {
+  test("그룹명 정규화 (BE/be / be 동일)", () => {
     const { handlers } = setup();
-    registerPeer(handlers, "sender");
-    const result = handlers.handleSendMessage({ from_id: "sender", to_id: "ghost", text: "hello" });
+    registerPeer(handlers, "p");
+    const result = handlers.handleSetGroups({ id: "p", groups: ["BE", "be ", " be"] });
+    expect(result.groups).toEqual(["be"]);
+  });
+
+  test("빈 문자열/공백만 있는 그룹은 제거", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "p");
+    const result = handlers.handleSetGroups({ id: "p", groups: ["be", "", "  "] });
+    expect(result.groups).toEqual(["be"]);
+  });
+
+  test("모든 그룹이 빈 문자열이면 에러", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "p");
+    const result = handlers.handleSetGroups({ id: "p", groups: ["", "  "] });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("ghost");
+  });
+
+  test("미등록 피어는 에러", () => {
+    const { handlers } = setup();
+    const result = handlers.handleSetGroups({ id: "ghost", groups: ["be"] });
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -124,47 +161,151 @@ describe("handleSendMessage", () => {
 describe("handleListPeers", () => {
   beforeEach(() => peers.clear());
 
-  test("scope=machine 전체 반환", () => {
-    const { handlers } = setup();
-    registerPeer(handlers, "a", { cwd: "/project-a" });
-    registerPeer(handlers, "b", { cwd: "/project-b" });
-    const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
-    expect(list).toHaveLength(2);
-  });
-
-  test("scope=directory 같은 cwd만", () => {
-    const { handlers } = setup();
-    registerPeer(handlers, "a", { cwd: "/project-a" });
-    registerPeer(handlers, "b", { cwd: "/project-b" });
-    const list = handlers.handleListPeers({ scope: "directory", cwd: "/project-a", git_root: null });
-    expect(list).toHaveLength(1);
-    expect(list[0]!.id).toBe("a");
-  });
-
-  test("scope=repo 같은 git_root만", () => {
-    const { handlers } = setup();
-    registerPeer(handlers, "a", { cwd: "/repo/sub-a", git_root: "/repo" });
-    registerPeer(handlers, "b", { cwd: "/repo/sub-b", git_root: "/repo" });
-    registerPeer(handlers, "c", { cwd: "/other", git_root: "/other" });
-    const list = handlers.handleListPeers({ scope: "repo", cwd: "/repo/sub-a", git_root: "/repo" });
-    expect(list).toHaveLength(2);
-  });
-
-  test("scope=repo git_root 없으면 cwd 폴백", () => {
-    const { handlers } = setup();
-    registerPeer(handlers, "a", { cwd: "/no-git", git_root: null });
-    registerPeer(handlers, "b", { cwd: "/no-git", git_root: null });
-    const list = handlers.handleListPeers({ scope: "repo", cwd: "/no-git", git_root: null });
-    expect(list).toHaveLength(2);
-  });
-
-  test("exclude_id로 자기 자신 제외", () => {
+  test("같은 그룹(lobby) 피어만 반환, 자기 자신 제외", () => {
     const { handlers } = setup();
     registerPeer(handlers, "me");
     registerPeer(handlers, "other");
-    const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null, exclude_id: "me" });
+    const list = handlers.handleListPeers({ id: "me" });
     expect(list).toHaveLength(1);
     expect(list[0]!.id).toBe("other");
+    expect(list[0]!.matched_groups).toEqual([DEFAULT_GROUP]);
+  });
+
+  test("그룹 다르면 안 보임", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "me");
+    registerPeer(handlers, "other");
+    handlers.handleSetGroups({ id: "me", groups: ["be"] });
+    handlers.handleSetGroups({ id: "other", groups: ["fe"] });
+    const list = handlers.handleListPeers({ id: "me" });
+    expect(list).toHaveLength(0);
+  });
+
+  test("교집합 그룹만 matched_groups에 표시 (다른 그룹 누설 X)", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "me");
+    registerPeer(handlers, "gate");
+    handlers.handleSetGroups({ id: "me", groups: ["be"] });
+    handlers.handleSetGroups({ id: "gate", groups: ["be", "talk"] });
+    const list = handlers.handleListPeers({ id: "me" });
+    expect(list).toHaveLength(1);
+    expect(list[0]!.matched_groups).toEqual(["be"]);
+  });
+
+  test("미등록 피어 호출 시 빈 배열", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "other");
+    const list = handlers.handleListPeers({ id: "ghost" });
+    expect(list).toEqual([]);
+  });
+});
+
+// --- listGroups ---
+
+describe("handleListGroups", () => {
+  beforeEach(() => peers.clear());
+
+  test("활성 그룹과 인원수 반환", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "a");
+    registerPeer(handlers, "b");
+    registerPeer(handlers, "c");
+    handlers.handleSetGroups({ id: "a", groups: ["be"] });
+    handlers.handleSetGroups({ id: "b", groups: ["be", "talk"] });
+    handlers.handleSetGroups({ id: "c", groups: ["talk"] });
+
+    const groups = handlers.handleListGroups();
+    expect(groups).toEqual([
+      { name: "be", peer_count: 2 },
+      { name: "talk", peer_count: 2 },
+    ]);
+  });
+
+  test("피어 없으면 빈 배열", () => {
+    const { handlers } = setup();
+    expect(handlers.handleListGroups()).toEqual([]);
+  });
+});
+
+// --- sendMessage (그룹 격리) ---
+
+describe("handleSendMessage", () => {
+  beforeEach(() => peers.clear());
+
+  test("같은 그룹 피어에게 전송 성공", () => {
+    const { handlers } = setup();
+    const recv = makeMockController();
+    handlers.handleRegister(
+      { id: "receiver", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      recv.controller,
+    );
+    registerPeer(handlers, "sender");
+
+    const result = handlers.handleSendMessage({ from_id: "sender", to_id: "receiver", text: "hi" });
+    expect(result.ok).toBe(true);
+
+    // recv.sent[0] = registered, recv.sent[1] = message
+    const event = JSON.parse(recv.sent[1]!.replace("data: ", "").trim());
+    expect(event.type).toBe("message");
+    expect(event.text).toBe("hi");
+  });
+
+  test("다른 그룹 피어에게 전송 시 'not found' 위장 응답", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "sender");
+    registerPeer(handlers, "receiver");
+    handlers.handleSetGroups({ id: "sender", groups: ["be"] });
+    handlers.handleSetGroups({ id: "receiver", groups: ["fe"] });
+
+    const result = handlers.handleSendMessage({ from_id: "sender", to_id: "receiver", text: "hi" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("receiver");
+    expect(result.error).toContain("not found");
+  });
+
+  test("정말 없는 피어에게 전송 시 동일한 'not found' 응답", () => {
+    const { handlers } = setup();
+    registerPeer(handlers, "sender");
+    const result = handlers.handleSendMessage({ from_id: "sender", to_id: "ghost", text: "hi" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("ghost");
+    expect(result.error).toContain("not found");
+  });
+
+  test("게이트 시나리오: 다중 그룹 피어가 양쪽과 통신 가능", () => {
+    const { handlers } = setup();
+    const aRecv = makeMockController();
+    const dRecv = makeMockController();
+    handlers.handleRegister(
+      { id: "a", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      aRecv.controller,
+    );
+    handlers.handleRegister(
+      { id: "d", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      dRecv.controller,
+    );
+    registerPeer(handlers, "g");
+    handlers.handleSetGroups({ id: "a", groups: ["talk"] });
+    handlers.handleSetGroups({ id: "g", groups: ["my-team", "talk"] });
+    handlers.handleSetGroups({ id: "d", groups: ["my-team"] });
+
+    expect(handlers.handleSendMessage({ from_id: "a", to_id: "g", text: "hi" }).ok).toBe(true);
+    expect(handlers.handleSendMessage({ from_id: "g", to_id: "d", text: "hi" }).ok).toBe(true);
+    expect(handlers.handleSendMessage({ from_id: "a", to_id: "d", text: "hi" }).ok).toBe(false);
+  });
+
+  test("skill 옵션 전달", () => {
+    const { handlers } = setup();
+    const recv = makeMockController();
+    handlers.handleRegister(
+      { id: "receiver", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
+      recv.controller,
+    );
+    registerPeer(handlers, "sender");
+
+    handlers.handleSendMessage({ from_id: "sender", to_id: "receiver", text: "code", skill: "review" });
+    const event = JSON.parse(recv.sent[1]!.replace("data: ", "").trim());
+    expect(event.skill).toBe("review");
   });
 });
 
@@ -173,21 +314,19 @@ describe("handleListPeers", () => {
 describe("handleUnregister", () => {
   beforeEach(() => peers.clear());
 
-  test("피어 map에서 삭제 + controller.close() 호출", () => {
+  test("피어 map에서 삭제 + controller.close()", () => {
     const { handlers } = setup();
     const mock = makeMockController();
     handlers.handleRegister(
       { id: "peer", pid: 1, cwd: "/", git_root: null, tty: null, summary: "" },
       mock.controller,
     );
-    expect(peers.has("peer")).toBe(true);
-
     handlers.handleUnregister({ id: "peer" });
     expect(peers.has("peer")).toBe(false);
     expect(mock.isClosed()).toBe(true);
   });
 
-  test("등록 안 된 피어 unregister → 에러 없음", () => {
+  test("미등록 피어 unregister는 무시", () => {
     const { handlers } = setup();
     expect(() => handlers.handleUnregister({ id: "ghost" })).not.toThrow();
   });
@@ -201,8 +340,9 @@ describe("handleSetSummary", () => {
   test("summary 업데이트", () => {
     const { handlers } = setup();
     registerPeer(handlers, "peer");
+    registerPeer(handlers, "other");
     handlers.handleSetSummary({ id: "peer", summary: "리뷰 중" });
-    const list = handlers.handleListPeers({ scope: "machine", cwd: "/", git_root: null });
+    const list = handlers.handleListPeers({ id: "other" });
     expect(list[0]!.summary).toBe("리뷰 중");
   });
 });

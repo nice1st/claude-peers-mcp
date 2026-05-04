@@ -1,6 +1,6 @@
 {
   "name": "claude-peers-broker",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Broker for claude-peers",
   "module": "index.ts",
   "type": "module",

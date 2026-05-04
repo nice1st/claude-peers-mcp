@@ -109,17 +109,18 @@ CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 
 | 도구 | 설명 |
 |------|------|
-| `register` | broker에 alias로 등록, SSE 연결 수립 (**먼저 호출**) |
+| `register` | broker에 alias로 등록, SSE 연결 수립 (**먼저 호출**). 자동으로 `lobby` 그룹 가입 |
 | `unregister` | 등록 해제, SSE 연결 종료 |
-| `list_peers` | 다른 Claude Code 인스턴스 조회 (scope: machine/directory/repo) |
-| `send_message` | ID로 다른 인스턴스에 메시지 전송 |
+| `list_peers` | 같은 그룹 피어 조회. 응답에 매칭 그룹(`matched_groups`) 포함 |
+| `list_groups` | 활성 그룹과 인원수 조회 |
+| `set_groups` | 그룹 멤버십 교체 (배열 전달, 기존 그룹 초기화) |
+| `send_message` | ID로 다른 인스턴스에 메시지 전송. 그룹 교집합 없으면 `Peer not found` |
 | `set_summary` | 작업 요약 설정 (다른 피어에게 표시) |
 
 | 스킬 | 사용법 |
 |------|--------|
 | `/register` | `/register planner` |
 | `/peers` | `/peers` |
-| `/send` | `/send worker 리뷰해줘` |
 
 ## 동작 원리
 

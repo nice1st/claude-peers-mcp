@@ -8,12 +8,13 @@
  * Run directly: bun broker.ts
  */
 
-import { createHandlers, peers, encoder, logPeerRemoved } from "./broker-handlers.ts";
+import { createHandlers, peers, encoder, logPeerRemoved, normalize } from "./broker-handlers.ts";
 import type {
   RegisterRequest,
   SetSummaryRequest,
   ListPeersRequest,
   SendMessageRequest,
+  SetGroupsRequest,
 } from "./shared/types.ts";
 
 const PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
@@ -59,6 +60,7 @@ Bun.serve({
       // POST /register → SSE 스트림 응답
       if (path === "/register") {
         const body = await req.json() as RegisterRequest;
+        const normalizedId = normalize(body.id);
 
         let streamController: ReadableStreamDefaultController;
         const stream = new ReadableStream({
@@ -68,10 +70,10 @@ Bun.serve({
           },
           cancel() {
             // 재등록으로 이미 교체된 경우 삭제하지 않음
-            const current = peers.get(body.id);
+            const current = peers.get(normalizedId);
             if (current?.controller === streamController) {
-              peers.delete(body.id);
-              logPeerRemoved(body.id, "sse-cancelled");
+              peers.delete(normalizedId);
+              logPeerRemoved(normalizedId, "sse-cancelled");
             }
           },
         });
@@ -92,8 +94,12 @@ Bun.serve({
         case "/set-summary":
           handlers.handleSetSummary(body as SetSummaryRequest);
           return Response.json({ ok: true });
+        case "/set-groups":
+          return Response.json(handlers.handleSetGroups(body as SetGroupsRequest));
         case "/list-peers":
           return Response.json(handlers.handleListPeers(body as ListPeersRequest));
+        case "/list-groups":
+          return Response.json(handlers.handleListGroups());
         case "/send-message":
           return Response.json(handlers.handleSendMessage(body as SendMessageRequest));
         case "/unregister":

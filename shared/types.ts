@@ -9,6 +9,7 @@ export interface Peer {
   tty: string | null;
   summary: string;
   registered_at: string;
+  matched_groups: string[];
 }
 
 // --- Broker API types ---
@@ -32,10 +33,7 @@ export interface SetSummaryRequest {
 }
 
 export interface ListPeersRequest {
-  scope: "machine" | "directory" | "repo";
-  cwd: string;
-  git_root: string | null;
-  exclude_id?: PeerId;
+  id: PeerId;
 }
 
 export interface SendMessageRequest {
@@ -43,6 +41,20 @@ export interface SendMessageRequest {
   to_id: PeerId;
   text: string;
   skill?: string;
+}
+
+export interface SetGroupsRequest {
+  id: PeerId;
+  groups: string[];
+}
+
+export interface ListGroupsRequest {
+  id: PeerId;
+}
+
+export interface GroupSummary {
+  name: string;
+  peer_count: number;
 }
 
 // --- SSE 이벤트 타입 (브로커 → MCP서버) ---
