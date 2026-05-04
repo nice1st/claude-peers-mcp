@@ -15,7 +15,6 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 ### 레포 루트 (브로커/운영)
 - `broker.ts` — HTTP daemon (0.0.0.0:7899). 피어를 메모리 Map으로 관리, SSE로 메시지 push.
 - `broker-handlers.ts` — broker 핸들러 로직 (테스트 분리용).
-- `cli.ts` — broker 상태 조회 CLI. `CLAUDE_PEERS_BROKER_URL` 지원.
 - `shared/types.ts` — broker API DTO.
 - `.claude-plugin/marketplace.json` — 마켓플레이스 매니페스트 (`source: "./plugin"`).
 
@@ -23,7 +22,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 - `plugin/server.ts` — MCP stdio server. broker에 HTTP로 통신.
 - `plugin/shared/types.ts` — broker API DTO (복사본).
 - `plugin/.claude-plugin/plugin.json` — 플러그인 매니페스트 + mcpServers 정의.
-- `plugin/skills/` — `/register`, `/peers` 슬래시 커맨드. 메시지 전송은 MCP `send_message` 도구 직접 호출.
+- `plugin/skills/` — `/register`, `/peers`, `/groups` 슬래시 커맨드. 메시지 전송은 MCP `send_message` 도구 직접 호출.
 
 ## Workflow
 
@@ -44,20 +43,20 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 
 | Tool | Description |
 |------|-------------|
-| `register` | Register with broker + open SSE connection (CALL FIRST) |
+| `register` | Register with broker + open SSE connection (CALL FIRST). Auto-joins `lobby` group |
 | `unregister` | Unregister + close SSE connection |
-| `list_peers` | Discover other Claude Code instances |
-| `send_message` | Send message to another instance by ID |
+| `list_peers` | List peers sharing at least one group with you |
+| `list_groups` | List all active groups with peer counts |
+| `set_groups` | Replace your group memberships (array of names) |
+| `send_message` | Send message to peer (requires shared group; otherwise `Peer not found`) |
 | `set_summary` | Set work summary (visible to peers) |
 
 ## Running
 
 ```bash
-# Broker (리모트 서버)
-bun broker.ts
-
-# CLI
-CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
+bun broker.ts                              # 브로커 실행
+curl http://localhost:7899/health          # 상태 확인
+pkill -f 'bun broker.ts'                   # 브로커 종료
 ```
 
 ## Environment Variables
