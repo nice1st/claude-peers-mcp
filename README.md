@@ -121,6 +121,7 @@ CLAUDE_PEERS_BROKER_URL=http://remote:7899 bun cli.ts status
 |------|--------|
 | `/register` | `/register planner` |
 | `/peers` | `/peers` |
+| `/groups` | `/groups` (조회) / `/groups be fe` (가입) |
 
 ## 동작 원리
 

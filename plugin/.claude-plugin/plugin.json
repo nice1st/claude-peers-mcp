@@ -1,7 +1,7 @@
 {
   "name": "claude-peers",
   "description": "Real-time peer messaging between Claude Code instances across machines via channel protocol",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "nice1st"
   },
