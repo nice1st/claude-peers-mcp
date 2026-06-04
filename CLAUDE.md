@@ -43,7 +43,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 
 | Tool | Description |
 |------|-------------|
-| `register` | Register with broker + open SSE connection (CALL FIRST). Auto-joins `lobby` group |
+| `register` | Register with broker + open SSE connection (CALL FIRST). peer ID is `machine:alias`, auto-joins machine group |
 | `unregister` | Unregister + close SSE connection |
 | `list_peers` | List peers sharing at least one group with you |
 | `list_groups` | List all active groups with peer counts |

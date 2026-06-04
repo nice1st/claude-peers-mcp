@@ -1,6 +1,10 @@
 /**
  * Broker handler logic — separated for testability.
  * Peers are tracked in memory (no SQLite). SSE controllers are stored per peer.
+ *
+ * peer_id 형식: `machine:alias` (예: "yhchoi-mac:analyst").
+ * - machine, alias, group은 normalize()로 정규화 (`:` 제거 포함).
+ * - peer_id는 정규화된 machine과 alias를 `:`로 결합한 결과 (`:` 보존).
  */
 
 import type {
@@ -24,8 +28,18 @@ export function logPeerRemoved(id: string, reason: string): void {
   console.error(`[claude-peers broker] peer removed: id=${id} reason=${reason}`);
 }
 
+// alias / machine / group 조각 정규화. `:`는 peer_id 구분자라 제거.
 export function normalize(s: string): string {
-  return s.trim().toLowerCase();
+  return s.trim().toLowerCase().replace(/:/g, "");
+}
+
+// peer_id 정규화: `machine:alias`에서 양쪽 조각만 정규화하고 `:`는 보존.
+export function normalizePeerId(peerId: string): string {
+  const idx = peerId.indexOf(":");
+  if (idx === -1) return normalize(peerId);
+  const machine = normalize(peerId.slice(0, idx));
+  const alias = normalize(peerId.slice(idx + 1));
+  return `${machine}:${alias}`;
 }
 
 function hasIntersection(a: string[], b: string[]): boolean {
@@ -37,14 +51,10 @@ function intersection(a: string[], b: string[]): string[] {
   return a.filter((x) => b.includes(x));
 }
 
-export const DEFAULT_GROUP = "lobby";
-
 interface PeerEntry {
-  id: string;
-  pid: number;
+  id: string; // `machine:alias`
+  machine: string;
   cwd: string;
-  git_root: string | null;
-  tty: string | null;
   summary: string;
   registered_at: string;
   groups: string[];
@@ -59,13 +69,18 @@ export function createHandlers() {
     body: RegisterRequest,
     controller: ReadableStreamDefaultController,
   ): RegisterResponse {
-    const id = normalize(body.id);
-    if (!id) {
+    const alias = normalize(body.id);
+    const machine = normalize(body.machine);
+    if (!alias) {
       throw new Error("alias must not be empty");
     }
+    if (!machine) {
+      throw new Error("machine must not be empty");
+    }
+    const id = `${machine}:${alias}`;
     const now = new Date().toISOString();
 
-    // 같은 id 재등록 시 이전 SSE 닫기 (좀비 방지)
+    // 같은 peer_id 재등록 시 이전 SSE 닫기 (좀비 방지)
     const existing = peers.get(id);
     if (existing) {
       try { existing.controller.close(); } catch { /* already closed */ }
@@ -75,13 +90,11 @@ export function createHandlers() {
 
     const entry: PeerEntry = {
       id,
-      pid: body.pid,
+      machine,
       cwd: body.cwd,
-      git_root: body.git_root,
-      tty: body.tty,
       summary: body.summary,
       registered_at: now,
-      groups: [DEFAULT_GROUP],
+      groups: [machine],
       controller,
     };
     peers.set(id, entry);
@@ -93,15 +106,14 @@ export function createHandlers() {
   }
 
   function handleSetSummary(body: SetSummaryRequest): void {
-    const entry = peers.get(normalize(body.id));
+    const entry = peers.get(normalizePeerId(body.id));
     if (entry) {
       entry.summary = body.summary;
     }
   }
 
   function handleSetGroups(body: SetGroupsRequest): { ok: boolean; groups?: string[]; error?: string } {
-    const id = normalize(body.id);
-    const entry = peers.get(id);
+    const entry = peers.get(normalizePeerId(body.id));
     if (!entry) {
       return { ok: false, error: `Peer ${body.id} not found` };
     }
@@ -116,7 +128,7 @@ export function createHandlers() {
   }
 
   function handleListPeers(body: ListPeersRequest): Peer[] {
-    const callerId = normalize(body.id);
+    const callerId = normalizePeerId(body.id);
     const caller = peers.get(callerId);
     if (!caller) return [];
 
@@ -128,10 +140,7 @@ export function createHandlers() {
 
       result.push({
         id: entry.id,
-        pid: entry.pid,
         cwd: entry.cwd,
-        git_root: entry.git_root,
-        tty: entry.tty,
         summary: entry.summary,
         registered_at: entry.registered_at,
         matched_groups: matched,
@@ -153,10 +162,8 @@ export function createHandlers() {
   }
 
   function handleSendMessage(body: SendMessageRequest): { ok: boolean; error?: string } {
-    const fromId = normalize(body.from_id);
-    const toId = normalize(body.to_id);
-    const sender = peers.get(fromId);
-    const target = peers.get(toId);
+    const sender = peers.get(normalizePeerId(body.from_id));
+    const target = peers.get(normalizePeerId(body.to_id));
 
     // 그룹 격리: 발신자/수신자가 그룹 교집합 없거나 둘 중 하나가 없으면
     // 미등록 피어와 동일한 응답으로 위장 (그룹 멤버십 누설 방지)
@@ -184,7 +191,7 @@ export function createHandlers() {
   }
 
   function handleUnregister(body: { id: string }): void {
-    const id = normalize(body.id);
+    const id = normalizePeerId(body.id);
     const entry = peers.get(id);
     if (entry) {
       try { entry.controller.close(); } catch { /* already closed */ }

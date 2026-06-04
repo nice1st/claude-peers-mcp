@@ -2,11 +2,8 @@
 export type PeerId = string;
 
 export interface Peer {
-  id: PeerId;
-  pid: number;
+  id: PeerId; // `machine:alias` 형식
   cwd: string;
-  git_root: string | null;
-  tty: string | null;
   summary: string;
   registered_at: string;
   matched_groups: string[];
@@ -15,11 +12,9 @@ export interface Peer {
 // --- Broker API types ---
 
 export interface RegisterRequest {
-  id: string;
-  pid: number;
+  id: string; // alias (broker가 machine과 결합해 peer_id 생성)
+  machine: string;
   cwd: string;
-  git_root: string | null;
-  tty: string | null;
   summary: string;
 }
 

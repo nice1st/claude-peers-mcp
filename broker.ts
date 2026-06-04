@@ -60,7 +60,7 @@ Bun.serve({
       // POST /register → SSE 스트림 응답
       if (path === "/register") {
         const body = await req.json() as RegisterRequest;
-        const normalizedId = normalize(body.id);
+        const peerId = `${normalize(body.machine)}:${normalize(body.id)}`;
 
         let streamController: ReadableStreamDefaultController;
         const stream = new ReadableStream({
@@ -70,10 +70,10 @@ Bun.serve({
           },
           cancel() {
             // 재등록으로 이미 교체된 경우 삭제하지 않음
-            const current = peers.get(normalizedId);
+            const current = peers.get(peerId);
             if (current?.controller === streamController) {
-              peers.delete(normalizedId);
-              logPeerRemoved(normalizedId, "sse-cancelled");
+              peers.delete(peerId);
+              logPeerRemoved(peerId, "sse-cancelled");
             }
           },
         });

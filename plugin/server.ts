@@ -19,6 +19,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { hostname } from "node:os";
 import type {
   PeerId,
   Peer,
@@ -64,51 +65,22 @@ function log(msg: string) {
   console.error(`[claude-peers] ${msg}`);
 }
 
-async function getGitRoot(cwd: string): Promise<string | null> {
-  try {
-    const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
-      cwd,
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    const text = await new Response(proc.stdout).text();
-    const code = await proc.exited;
-    if (code === 0) {
-      return text.trim();
-    }
-  } catch {
-    // not a git repo
-  }
-  return null;
-}
-
-function getTty(): string | null {
-  try {
-    const ppid = process.ppid;
-    if (ppid) {
-      const proc = Bun.spawnSync(["ps", "-o", "tty=", "-p", String(ppid)]);
-      const tty = new TextDecoder().decode(proc.stdout).trim();
-      if (tty && tty !== "?" && tty !== "??") {
-        return tty;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+// alias / machine 조각 정규화 (broker normalize와 동일 규칙). `:`는 peer_id 구분자라 제거.
+function normalizeSegment(s: string): string {
+  return s.trim().toLowerCase().replace(/:/g, "");
 }
 
 // --- State ---
 
 let myId: PeerId | null = null;
 let myCwd = process.cwd();
-let myGitRoot: string | null = null;
+let myMachine = normalizeSegment(hostname());
 let sseReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
 // --- MCP Server ---
 
 const mcp = new Server(
-  { name: "claude-peers", version: "1.1.1" },
+  { name: "claude-peers", version: "1.2.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
@@ -132,7 +104,7 @@ const TOOLS = [
   {
     name: "register",
     description:
-      "Register with the broker using an alias (e.g. 'planner', 'worker-a'). The alias becomes your peer ID. Call this before using any other tools. Opens a persistent SSE connection to receive messages instantly.",
+      "Register with the broker using an alias (e.g. 'planner', 'worker-a'). Your peer ID becomes 'machine:alias' (machine from hostname). Call this before using any other tools. Opens a persistent SSE connection to receive messages instantly.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -196,7 +168,7 @@ const TOOLS = [
       properties: {
         to_id: {
           type: "string" as const,
-          description: "The peer ID of the target Claude Code instance (from list_peers)",
+          description: "The full peer ID of the target (machine:alias form, from list_peers)",
         },
         message: {
           type: "string" as const,
@@ -309,7 +281,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   switch (name) {
     case "register": {
       const rawAlias = (args as { alias?: string }).alias;
-      const alias = rawAlias?.trim().toLowerCase();
+      const alias = rawAlias ? normalizeSegment(rawAlias) : undefined;
       if (!alias) {
         return {
           content: [{ type: "text" as const, text: "alias is required. Usage: register(alias: 'planner')" }],
@@ -328,13 +300,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       try {
-        const tty = getTty();
         const body: RegisterRequest = {
           id: alias,
-          pid: process.pid,
+          machine: myMachine,
           cwd: myCwd,
-          git_root: myGitRoot,
-          tty,
           summary: "",
         };
 
@@ -352,7 +321,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         // SSE 스트림 읽기 시작
         const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
         sseReader = reader;
-        myId = alias;
+        myId = `${myMachine}:${alias}`;
 
         // 백그라운드 루프
         startSSELoop(reader);
@@ -361,7 +330,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         return {
           content: [{
             type: "text" as const,
-            text: `Registered as peer "${myId}" in group [lobby]. Receiving messages via SSE. Call set_summary to describe your current work, and set_groups to move to other groups.`,
+            text: `Registered as peer "${myId}" in group [${myMachine}] (your machine). Same-machine sessions auto-discover each other. Use set_groups to join shared cross-machine groups.`,
           }],
         };
       } catch (e) {
@@ -425,11 +394,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
         const lines = peers.map((p) => {
           const parts = [
             `ID: ${p.id}`,
-            `PID: ${p.pid}`,
             `CWD: ${p.cwd}`,
           ];
-          if (p.git_root) parts.push(`Repo: ${p.git_root}`);
-          if (p.tty) parts.push(`TTY: ${p.tty}`);
           if (p.summary) parts.push(`Summary: ${p.summary}`);
           if (p.matched_groups?.length) parts.push(`Matched groups: ${p.matched_groups.join(", ")}`);
           parts.push(`Registered: ${p.registered_at}`);
@@ -599,10 +565,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 async function main() {
   myCwd = process.cwd();
-  myGitRoot = await getGitRoot(myCwd);
+  myMachine = normalizeSegment(hostname());
 
   log(`CWD: ${myCwd}`);
-  log(`Git root: ${myGitRoot ?? "(none)"}`);
+  log(`Machine: ${myMachine}`);
   log(`Broker URL: ${BROKER_URL}`);
 
   if (await isBrokerAlive()) {
