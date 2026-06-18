@@ -19,10 +19,13 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 - `.claude-plugin/marketplace.json` — 마켓플레이스 매니페스트 (`source: "./plugin"`).
 
 ### plugin/ (플러그인 배포)
-- `plugin/server.ts` — MCP stdio server. broker에 HTTP로 통신.
+- `plugin/server.ts` — MCP stdio server 소스. broker에 HTTP로 통신.
+- `plugin/dist/server.js` — 배포 번들 (의존성 인라인). mcpServers start가 실행하는 실제 파일. `bun run build`로 생성하며 git에 커밋한다. 기동 경로에 `bun install`이 없어 다중 세션 동시 기동 시 EEXIST 경합이 발생하지 않는다.
 - `plugin/shared/types.ts` — broker API DTO (복사본).
 - `plugin/.claude-plugin/plugin.json` — 플러그인 매니페스트 + mcpServers 정의.
 - `plugin/skills/` — `/register`, `/peers`, `/groups` 슬래시 커맨드. 메시지 전송은 MCP `send_message` 도구 직접 호출.
+
+`server.ts` 수정 시 반드시 `cd plugin && bun run build`로 번들을 재생성해 함께 커밋한다. 번들이 stale하면 소스 변경이 사용자에게 반영되지 않는다.
 
 ## Workflow
 

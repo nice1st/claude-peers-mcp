@@ -80,7 +80,7 @@ let sseReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 // --- MCP Server ---
 
 const mcp = new Server(
-  { name: "claude-peers", version: "1.2.0" },
+  { name: "claude-peers", version: "1.3.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },

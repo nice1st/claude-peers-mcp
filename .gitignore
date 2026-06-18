@@ -6,6 +6,10 @@ out
 dist
 *.tgz
 
+# 단, 플러그인 배포 번들은 추적한다 (기동 시 bun install 제거 → 동시 기동 EEXIST 방지)
+!plugin/dist
+!plugin/dist/server.js
+
 # code coverage
 coverage
 *.lcov
